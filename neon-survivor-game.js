@@ -7,6 +7,7 @@ let projectiles = [];
 let enemyProjectiles = [];
 let particles = [];
 let pickups = [];
+let damageNumbers = [];
 let gameTime = 0;
 let score = 0;
 let level = 1;
@@ -99,6 +100,13 @@ function setup() {
   gameState = 'playing';
 }
 
+function DamageNumber(x, y, amount) {
+  this.x = x;
+  this.y = y;
+  this.amount = amount;
+  this.lifetime = 60; // 1 second
+  this.alpha = 255;
+}
 
 function draw() {
   background(COLORS.background);
@@ -119,6 +127,17 @@ function draw() {
     translate(random(-screenShake, screenShake), random(-screenShake, screenShake));
     screenShake *= 0.9;
     if (screenShake < 0.5) screenShake = 0;
+  }
+}
+
+function drawDamageNumbers() {
+  for (let dn of damageNumbers) {
+    push();
+    fill(255, dn.alpha);
+    textSize(16);
+    textAlign(CENTER);
+    text(floor(dn.amount), dn.x, dn.y);
+    pop();
   }
 }
 
@@ -144,6 +163,9 @@ function updateGame() {
   // Update pickups
   updatePickups();
   
+  // Update damage numbers
+  updateDamageNumbers();
+
   // Spawn enemies
   if (frameCount % Math.max(30, 120 - level * 5) === 0) {
     spawnEnemy();
@@ -157,6 +179,19 @@ function updateGame() {
   // Check for level up
   if (experience >= experienceToNextLevel) {
     levelUp();
+  }
+}
+
+function updateDamageNumbers() {
+  for (let i = damageNumbers.length - 1; i >= 0; i--) {
+    let dn = damageNumbers[i];
+    dn.y -= 1; // Move up
+    dn.lifetime--;
+    dn.alpha = 255 * (dn.lifetime / 60); // Fade out
+
+    if (dn.lifetime <= 0) {
+      damageNumbers.splice(i, 1);
+    }
   }
 }
 
@@ -365,6 +400,7 @@ function updateProjectiles() {
       if (distance < p.size + e.size) {
         // Hit enemy
         e.health -= p.damage;
+        damageNumbers.push(new DamageNumber(e.x, e.y, p.damage));
         hitSomething = true;
 
         // Create hit particles
@@ -386,7 +422,9 @@ function updateProjectiles() {
             let otherEnemy = enemies[k];
             let explosionRadius = 80 * player.projectileSize;
             if (dist(p.x, p.y, otherEnemy.x, otherEnemy.y) < explosionRadius) {
-              otherEnemy.health -= p.damage * 0.5; // Explosion does 50% damage
+              let damage = p.damage * 0.5;
+              otherEnemy.health -= damage; // Explosion does 50% damage
+              damageNumbers.push(new DamageNumber(otherEnemy.x, otherEnemy.y, damage));
               if (otherEnemy.health <= 0) {
                 killEnemy(k);
               }
@@ -1104,6 +1142,9 @@ function drawGame() {
   // Draw enemies
   drawEnemies();
   
+  // Draw damage numbers
+  drawDamageNumbers();
+
   // Draw projectiles
   drawProjectiles();
   
