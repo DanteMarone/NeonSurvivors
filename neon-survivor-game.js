@@ -4,6 +4,7 @@
 let player;
 let enemies = [];
 let projectiles = [];
+let enemyProjectiles = [];
 let particles = [];
 let pickups = [];
 let gameTime = 0;
@@ -132,6 +133,9 @@ function updateGame() {
   // Update enemies
   updateEnemies();
   
+  // Update enemy projectiles
+  updateEnemyProjectiles();
+
   // Update particles
   updateParticles();
   
@@ -242,6 +246,42 @@ function fireProjectile() {
   }
 }
 
+function fireEnemyProjectile(enemy) {
+  let angle = atan2(player.y - enemy.y, player.x - enemy.x);
+  enemyProjectiles.push({
+    x: enemy.x,
+    y: enemy.y,
+    vx: cos(angle) * 4,
+    vy: sin(angle) * 4,
+    size: 8,
+    damage: enemy.damage,
+    color: enemy.color,
+    lifetime: 240 // 4 seconds
+  });
+}
+
+function updateEnemyProjectiles() {
+  for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
+    let p = enemyProjectiles[i];
+    p.x += p.vx;
+    p.y += p.vy;
+    p.lifetime--;
+
+    // Check for collision with player
+    if (dist(p.x, p.y, player.x, player.y) < p.size + player.size) {
+      player.health -= p.damage;
+      player.invulnerable = 30;
+      screenShake = 5;
+      enemyProjectiles.splice(i, 1);
+      continue;
+    }
+
+    if (p.lifetime <= 0 || p.x < 0 || p.x > width || p.y < 0 || p.y > height) {
+      enemyProjectiles.splice(i, 1);
+    }
+  }
+}
+
 function updateProjectiles() {
   for (let i = projectiles.length - 1; i >= 0; i--) {
     let p = projectiles[i];
@@ -323,6 +363,12 @@ function updateEnemies() {
     e.x += cos(angle) * e.speed;
     e.y += sin(angle) * e.speed;
     e.angle = angle;
+
+    // Ranged enemies fire projectiles
+    if (e.type === 'ranged' && millis() - e.lastFired > 2000) {
+      fireEnemyProjectile(e);
+      e.lastFired = millis();
+    }
     
     // Check for collision with player
     if (player.invulnerable <= 0) {
@@ -359,7 +405,20 @@ function updateEnemies() {
     }
     
     // Leave trail
-    if (frameCount % 10 === 0) {
+    if (e.type === 'trail' && frameCount % 5 === 0) {
+      particles.push({
+        x: e.x,
+        y: e.y,
+        vx: 0,
+        vy: 0,
+        size: e.size * 1.5,
+        lifetime: 180, // 3 seconds
+        color: e.color,
+        alpha: 150,
+        damaging: true,
+        damage: 5
+      });
+    } else if (frameCount % 10 === 0) {
       particles.push({
         x: e.x,
         y: e.y,
@@ -385,6 +444,16 @@ function updateParticles() {
     // Fade particle
     p.alpha = p.alpha * (p.lifetime / (p.lifetime + 1));
     
+    // Check for collision with player if particle is damaging
+    if (p.damaging && player.invulnerable <= 0) {
+      if (dist(p.x, p.y, player.x, player.y) < p.size + player.size / 2) {
+        player.health -= p.damage;
+        player.invulnerable = 30;
+        screenShake = 3;
+        // Do not remove the particle, it can damage multiple times
+      }
+    }
+
     // Remove particle if expired
     if (--p.lifetime <= 0) {
       particles.splice(i, 1);
@@ -468,6 +537,14 @@ function updatePickups() {
 }
 
 function spawnEnemy() {
+  // Every 3 seconds, try to spawn a squad
+  if (floor(gameTime) % 3 === 0 && frameCount % 60 === 0) {
+    if (random() < 0.6) { // 60% chance to spawn a squad
+      spawnSquad();
+      return; // Don't spawn a single enemy if a squad is spawned
+    }
+  }
+
   // Determine spawn position outside the screen
   let spawnX, spawnY;
   let edge = floor(random(4));
@@ -517,6 +594,15 @@ function spawnEnemy() {
     enemyDamage = 20;
   }
   
+  if (gameTime > 240 && random() < 0.15) { // After 4 minutes, 15% chance of trail enemy
+    enemyType = 'trail';
+    enemySize = random(20, 30);
+    enemyHealth = 60 + level * 8;
+    enemySpeed = random(1.2, 1.8);
+    enemyColor = color(255, 50, 255);
+    enemyDamage = 15;
+  }
+
   // Create the enemy
   enemies.push({
     x: spawnX,
@@ -531,6 +617,98 @@ function spawnEnemy() {
     angle: 0,
     pulseTime: random(TWO_PI)
   });
+}
+
+function spawnSquad() {
+  let squadType = random(['line', 'v_shape', 'circle', 'ranged_support', 'trail_squad']);
+  let spawnEdge = floor(random(4));
+  let spawnX, spawnY;
+  let numEnemies = floor(random(4, 7));
+
+  // Determine starting position for the squad
+  switch (spawnEdge) {
+    case 0: spawnX = random(width); spawnY = -50; break; // Top
+    case 1: spawnX = width + 50; spawnY = random(height); break; // Right
+    case 2: spawnX = random(width); spawnY = height + 50; break; // Bottom
+    case 3: spawnX = -50; spawnY = random(height); break; // Left
+  }
+
+  for (let i = 0; i < numEnemies; i++) {
+    let enemyX = spawnX;
+    let enemyY = spawnY;
+    let enemyType = 'basic';
+    let enemySpeed = random(1, 1.5);
+
+    if (squadType === 'line') {
+      // Spawn in a line perpendicular to the spawn edge
+      if (spawnEdge === 0 || spawnEdge === 2) { // Top or Bottom
+        enemyX = spawnX + (i - numEnemies / 2) * 40;
+      } else { // Left or Right
+        enemyY = spawnY + (i - numEnemies / 2) * 40;
+      }
+    } else if (squadType === 'v_shape') {
+      // Spawn in a V shape
+      if (spawnEdge === 0) { // Top
+        enemyX = spawnX + (i - numEnemies / 2) * 40;
+        enemyY = spawnY + abs(i - numEnemies / 2) * 30;
+      } else { // Bottom
+        enemyX = spawnX + (i - numEnemies / 2) * 40;
+        enemyY = spawnY - abs(i - numEnemies / 2) * 30;
+      }
+    } else if (squadType === 'circle') {
+      // Spawn in a circular pattern
+      let angle = TWO_PI * i / numEnemies;
+      enemyX = spawnX + cos(angle) * 50;
+      enemyY = spawnY + sin(angle) * 50;
+    } else if (squadType === 'ranged_support' && gameTime > 150) {
+      // After 2.5 minutes, introduce ranged enemies with support
+      if (i < 2) { // Two ranged enemies
+        enemyType = 'ranged';
+      } else {
+        enemyType = 'fast';
+      }
+    } else if (squadType === 'trail_squad' && gameTime > 300) {
+      // After 5 minutes, introduce trail enemies in squads
+      enemyType = 'trail';
+    }
+
+    let enemySize, enemyHealth, enemyColor, enemyDamage;
+
+    switch (enemyType) {
+      case 'ranged':
+        enemySize = 20;
+        enemyHealth = 40 + level * 4;
+        enemyColor = color(255, 150, 0);
+        enemyDamage = 15;
+        break;
+      case 'trail':
+        enemySize = random(20, 30);
+        enemyHealth = 60 + level * 8;
+        enemyColor = color(255, 50, 255);
+        enemyDamage = 15;
+        break;
+      default:
+        enemySize = random(15, 25);
+        enemyHealth = 30 + level * 5;
+        enemyColor = COLORS.enemy1;
+        enemyDamage = 10;
+    }
+
+    enemies.push({
+      x: enemyX,
+      y: enemyY,
+      size: enemySize,
+      health: enemyHealth,
+      maxHealth: enemyHealth,
+      speed: enemySpeed * (1 + level * 0.05),
+      type: enemyType,
+      color: enemyColor,
+      damage: enemyDamage,
+      angle: 0,
+      pulseTime: random(TWO_PI),
+      lastFired: 0
+    });
+  }
 }
 
 function killEnemy(index) {
@@ -768,6 +946,9 @@ function drawGame() {
   // Draw projectiles
   drawProjectiles();
   
+  // Draw enemy projectiles
+  drawEnemyProjectiles();
+
   // Draw player
   drawPlayer();
   
@@ -826,6 +1007,14 @@ function drawPlayer() {
   ellipse(-player.size/3, 0, player.size/3, player.size/6);
   
   pop();
+}
+
+function drawEnemyProjectiles() {
+  for (let p of enemyProjectiles) {
+    fill(p.color);
+    noStroke();
+    ellipse(p.x, p.y, p.size * 2, p.size * 2);
+  }
 }
 
 function drawProjectiles() {
