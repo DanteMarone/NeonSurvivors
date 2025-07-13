@@ -73,6 +73,9 @@
     <!-- Load P5.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
     
+    <!-- Load Howler.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/howler/2.2.3/howler.min.js"></script>
+
     <!-- Load game script -->
     <script>
         // Neon Survivor - A Vampire Survivors style game with futuristic theme
@@ -108,6 +111,7 @@ let starfield = [];
 let screenShake = 0;
 let kills = 0;
 let boss = null;
+let sounds;
 
 // Color palette
 const COLORS = {
@@ -129,7 +133,20 @@ const COLORS = {
 };
 
 function preload() {
-  // We're creating all assets programmatically, so no external files to load
+  // Load sounds
+  sounds = {
+    shootLaser: new Howl({ src: ['https://assets.codepen.io/210284/laser-shoot.wav'], volume: 0.3 }),
+    shootPlasma: new Howl({ src: ['https://assets.codepen.io/210284/plasma-shoot.wav'], volume: 0.4 }),
+    shootWave: new Howl({ src: ['https://assets.codepen.io/210284/wave-shoot.wav'], volume: 0.3 }),
+    enemyHit: new Howl({ src: ['https://assets.codepen.io/210284/enemy-hit.wav'], volume: 0.2 }),
+    enemyDie: new Howl({ src: ['https://assets.codepen.io/210284/enemy-die.wav'], volume: 0.3 }),
+    playerHit: new Howl({ src: ['https://assets.codepen.io/210284/player-hit.wav'], volume: 0.5 }),
+    pickupExp: new Howl({ src: ['https://assets.codepen.io/210284/pickup-exp.wav'], volume: 0.2, rate: 1.5 }),
+    pickupHealth: new Howl({ src: ['https://assets.codepen.io/210284/pickup-health.wav'], volume: 0.4 }),
+    levelUp: new Howl({ src: ['https://assets.codepen.io/210284/level-up.wav'], volume: 0.5 }),
+    upgrade: new Howl({ src: ['https://assets.codepen.io/210284/upgrade.wav'], volume: 0.4 }),
+    gameOver: new Howl({ src: ['https://assets.codepen.io/210284/game-over.wav'], volume: 0.5 })
+  };
 }
 
 function setup() {
@@ -306,6 +323,7 @@ function updateEnemyProjectiles() {
       player.health -= p.damage;
       player.invulnerable = 30;
       screenShake = 5;
+      if (sounds && sounds.playerHit) sounds.playerHit.play();
       enemyProjectiles.splice(i, 1);
       continue;
     }
@@ -330,6 +348,10 @@ function updateProjectiles() {
         // Hit enemy
         e.health -= p.damage;
         damageNumbers.push(new DamageNumber(e.x, e.y, p.damage));
+        if (sounds && sounds.enemyHit) {
+          sounds.enemyHit.rate(random(0.9, 1.1));
+          sounds.enemyHit.play();
+        }
 
         // Create hit particles
         for (let k = 0; k < 8; k++) {
@@ -400,6 +422,7 @@ function updateEnemies() {
         // Player takes damage
         player.health -= e.damage;
         player.invulnerable = 30; // Half a second of invulnerability
+        if (sounds && sounds.playerHit) sounds.playerHit.play();
 
         // Screen shake
         screenShake = 10;
@@ -466,6 +489,10 @@ function updatePickups() {
       // Collect pickup
       if (p.type === 'experience') {
         experience += p.value;
+        if (sounds && sounds.pickupExp) {
+          sounds.pickupExp.rate(1 + level * 0.05);
+          sounds.pickupExp.play();
+        }
 
         // Create collection particles
         for (let j = 0; j < 8; j++) {
@@ -481,6 +508,7 @@ function updatePickups() {
         }
       } else if (p.type === 'health') {
         player.health = min(player.maxHealth, player.health + p.value);
+        if (sounds && sounds.pickupHealth) sounds.pickupHealth.play();
 
         // Create collection particles
         for (let j = 0; j < 8; j++) {
@@ -768,13 +796,33 @@ function killEnemy(index) {
 
   // Remove enemy
   enemies.splice(index, 1);
+  if (sounds && sounds.enemyDie) {
+    sounds.enemyDie.rate(random(0.9, 1.1));
+    sounds.enemyDie.play();
+  }
 }
 
 function levelUp() {
   // Increase level
   level++;
+  if (sounds && sounds.levelUp) sounds.levelUp.play();
 
   // Update experience required for next level
+  function levelUp() {
+    // Increase level
+    level++;
+    if (sounds && sounds.levelUp) sounds.levelUp.play();
+
+    // Update experience required for next level
+    experience = experience - experienceToNextLevel;
+    experienceToNextLevel = 100 + level * 50;
+
+    // Generate upgrade options
+    generateUpgradeOptions();
+
+    // Enter upgrade state
+    gameState = 'upgrade';
+  }
   experience = experience - experienceToNextLevel;
   experienceToNextLevel = 100 + level * 50;
 
@@ -916,6 +964,7 @@ function selectUpgrade(index) {
   if (index >= 0 && index < upgradeOptions.length) {
     // Apply the upgrade effect
     upgradeOptions[index].effect();
+    if (sounds && sounds.upgrade) sounds.upgrade.play();
 
     // Increment upgrade count
     player.upgradeCount++;
@@ -927,6 +976,7 @@ function selectUpgrade(index) {
 
 function gameOver() {
   gameState = 'gameover';
+  if (sounds && sounds.gameOver) sounds.gameOver.play();
 }
 
 function mouseClicked() {
@@ -1371,6 +1421,11 @@ class Player {
     if (millis() - this.lastFired > this.fireRate) {
       this.fire();
       this.lastFired = millis();
+      if (sounds) {
+        if (this.weapon === 'laser' && sounds.shootLaser) sounds.shootLaser.play();
+        else if (this.weapon === 'plasma' && sounds.shootPlasma) sounds.shootPlasma.play();
+        else if (this.weapon === 'wave' && sounds.shootWave) sounds.shootWave.play();
+      }
     }
 
     // Decrease invulnerability timer
