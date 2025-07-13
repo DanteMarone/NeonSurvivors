@@ -81,6 +81,24 @@
         // Neon Survivor - A Vampire Survivors style game with futuristic theme
 // All assets created programmatically with P5.js
 
+const weaponEvolutions = {
+    laser: {
+        name: 'Phasor',
+        description: 'Fires a continuous, wide beam of energy that pierces through all enemies.',
+        requiredPassive: 'High-Energy Capacitor',
+    },
+    plasma: {
+        name: 'Singularity Cannon',
+        description: 'Creates a black hole on impact, pulling in and damaging nearby enemies.',
+        requiredPassive: 'Graviton Emitter',
+    },
+    wave: {
+        name: 'Resonance Blaster',
+        description: 'Fires expanding energy rings that bounce off the edges of the screen.',
+        requiredPassive: 'Sonic Amplifier',
+    }
+};
+
 let player;
 let enemies = [];
 let projectiles = [];
@@ -102,7 +120,10 @@ let availableUpgrades = [
   { name: 'Projectile Size', description: 'Increase projectile size', maxLevel: 5, id: 'projectileSize' },
   { name: 'Projectile Speed', description: 'Increase projectile velocity', maxLevel: 5, id: 'projectileSpeed' },
   { name: 'Health', description: 'Increase max health', maxLevel: 5, id: 'health' },
-  { name: 'Multishot', description: 'Fire additional projectiles', maxLevel: 3, id: 'multishot' }
+  { name: 'Multishot', description: 'Fire additional projectiles', maxLevel: 3, id: 'multishot' },
+  { name: 'High-Energy Capacitor', description: 'Required for Phasor evolution', maxLevel: 1, id: 'highEnergyCapacitor' },
+  { name: 'Graviton Emitter', description: 'Required for Singularity Cannon evolution', maxLevel: 1, id: 'gravitonEmitter' },
+  { name: 'Sonic Amplifier', description: 'Required for Resonance Blaster evolution', maxLevel: 1, id: 'sonicAmplifier' }
 ];
 let activeSynergies = [];
 let synergyAlerts = [];
@@ -117,6 +138,7 @@ const synergies = [
   }
 ];
 let weaponTypes = ['laser', 'plasma', 'wave'];
+let evolvedWeapons = {};
 let currentWeapon = 'laser';
 let gameFont;
 let starfield = [];
@@ -264,6 +286,11 @@ function updateGame() {
     spawnEnemy();
   }
 
+  // Check for weapon evolution
+  if (frameCount % 60 === 0) { // Check every second
+    checkForWeaponEvolution();
+  }
+
   // Spawn boss at intervals
   if (floor(gameTime) > 0 && floor(gameTime) % 180 === 0 && boss === null) {
     spawnBoss();
@@ -382,9 +409,24 @@ function updateProjectiles() {
         }
 
         // Handle weapon-specific effects
-        if (player.synergies.supernova || p.type === 'plasma') {
+        if (player.synergies.supernova || p.type === 'plasma' || p.type === 'Singularity Cannon') {
           let explosionRadius = (p.type === 'plasma' ? 80 : 60) * p.projectileSize;
           let explosionDamage = p.damage * (p.type === 'plasma' ? 0.5 : 0.3);
+
+          if (p.type === 'Singularity Cannon') {
+              // Create a black hole
+              particles.push(new Particle(p.x, p.y, {
+                  vx: 0, vy: 0,
+                  size: 100,
+                  lifetime: 300,
+                  color: color(0),
+                  damaging: true,
+                  damage: p.damage * 0.1,
+                  pulls: true
+              }));
+              projectiles.splice(i, 1);
+              continue;
+          }
 
           for (let k = enemies.length - 1; k >= 0; k--) {
             if (k === j) continue;
@@ -399,9 +441,9 @@ function updateProjectiles() {
           }
         }
 
-        if (p.type === 'plasma' || (player.synergies.supernova && p.type !== 'laser')) {
+        if (p.type === 'plasma' || (player.synergies.supernova && p.type !== 'laser' && p.type !== 'Phasor')) {
           projectiles.splice(i, 1);
-        } else if (p.type === 'laser') {
+        } else if (p.type === 'laser' || p.type === 'Phasor') {
           p.pierce--;
           if (p.pierce <= 0) {
             projectiles.splice(i, 1);
@@ -481,6 +523,17 @@ function updateParticles() {
         screenShake = 3;
         // Do not remove the particle, it can damage multiple times
       }
+    }
+
+    if (p.pulls) {
+        for (let enemy of enemies) {
+            let d = dist(p.x, p.y, enemy.x, enemy.y);
+            if (d < p.size * 2) {
+                let angle = atan2(p.y - enemy.y, p.x - enemy.x);
+                enemy.x += cos(angle) * 2;
+                enemy.y += sin(angle) * 2;
+            }
+        }
     }
 
     if (p.isDead()) {
@@ -863,6 +916,7 @@ function generateUpgradeOptions() {
     if (upgrade.name === 'Projectile Speed' && player.projectileSpeed >= 12) return false;
     if (upgrade.name === 'Health' && player.maxHealth >= 300) return false;
     if (upgrade.name === 'Multishot' && player.multishot >= 5) return false;
+    if (player.takenUpgrades.includes(upgrade.name) && upgrade.maxLevel === 1) return false;
     return true;
   });
 
@@ -887,60 +941,48 @@ function generateUpgradeOptions() {
     let upgrade = available[index];
 
     // Create the upgrade option
+    let option = {
+        name: upgrade.name,
+        description: upgrade.description,
+        effect: () => {}
+    };
+
     switch (upgrade.name) {
-      case 'Speed':
-        upgradeOptions.push({
-          name: 'Speed Up',
-          description: 'Movement speed +15%',
-          effect: () => { player.speed *= 1.15; }
-        });
-        break;
-      case 'Damage':
-        upgradeOptions.push({
-          name: 'Power Up',
-          description: 'Projectile damage +20%',
-          effect: () => { player.damage *= 1.2; }
-        });
-        break;
-      case 'Fire Rate':
-        upgradeOptions.push({
-          name: 'Rapid Fire',
-          description: 'Fire rate +15%',
-          effect: () => { player.fireRate = max(100, player.fireRate * 0.85); }
-        });
-        break;
-      case 'Projectile Size':
-        upgradeOptions.push({
-          name: 'Big Shot',
-          description: 'Projectile size +25%',
-          effect: () => { player.projectileSize *= 1.25; }
-        });
-        break;
-      case 'Projectile Speed':
-        upgradeOptions.push({
-          name: 'Velocity',
-          description: 'Projectile speed +20%',
-          effect: () => { player.projectileSpeed *= 1.2; }
-        });
-        break;
-      case 'Health':
-        upgradeOptions.push({
-          name: 'Vitality',
-          description: 'Max health +20%',
-          effect: () => {
-            player.maxHealth *= 1.2;
-            player.health += player.maxHealth * 0.2;
-          }
-        });
-        break;
-      case 'Multishot':
-        upgradeOptions.push({
-          name: 'Multishot',
-          description: player.multishot === 1 ? 'Fire 2 projectiles at once' : 'Add +1 projectile',
-          effect: () => { player.multishot += 1; }
-        });
-        break;
+        case 'Speed':
+            option.effect = () => { player.speed *= 1.15; };
+            break;
+        case 'Damage':
+            option.effect = () => { player.damage *= 1.2; };
+            break;
+        case 'Fire Rate':
+            option.effect = () => { player.fireRate = max(100, player.fireRate * 0.85); };
+            break;
+        case 'Projectile Size':
+            option.effect = () => { player.projectileSize *= 1.25; };
+            break;
+        case 'Projectile Speed':
+            option.effect = () => { player.projectileSpeed *= 1.2; };
+            break;
+        case 'Health':
+            option.effect = () => {
+                player.maxHealth *= 1.2;
+                player.health += player.maxHealth * 0.2;
+            };
+            break;
+        case 'Multishot':
+            option.description = player.multishot === 1 ? 'Fire 2 projectiles at once' : 'Add +1 projectile';
+            option.effect = () => { player.multishot += 1; };
+            break;
+        default:
+            option.effect = () => {
+                if (!player.takenUpgrades.includes(upgrade.name)) {
+                    player.takenUpgrades.push(upgrade.name);
+                }
+            };
+            break;
     }
+    upgradeOptions.push(option);
+
 
     // Remove from available pool
     available.splice(index, 1);
@@ -1011,6 +1053,25 @@ function checkForSynergies() {
         synergyAlerts.push({ name: synergy.name, description: synergy.description, lifetime: 180 });
       }
     }
+  }
+}
+
+function checkForWeaponEvolution() {
+  const weapon = player.weapon;
+  if (evolvedWeapons[weapon]) return;
+
+  const weaponLevel = player.getWeaponLevel();
+  if (weaponLevel < 5) return;
+
+  const evolution = weaponEvolutions[weapon];
+  if (evolution && player.takenUpgrades.includes(evolution.requiredPassive)) {
+    evolvedWeapons[weapon] = true;
+    player.weapon = evolution.name;
+    synergyAlerts.push({
+      name: `EVOLVED: ${evolution.name}`,
+      description: evolution.description,
+      lifetime: 300
+    });
   }
 }
 
@@ -1312,9 +1373,16 @@ function drawUI() {
 
   // Weapon indicator
   textAlign(LEFT, TOP);
-  fill(COLORS.text);
-  textSize(18);
-  text(`Weapon: ${currentWeapon.charAt(0).toUpperCase() + currentWeapon.slice(1)}`, healthBarX + healthBarWidth + 20, healthBarY);
+  let weaponName = evolvedWeapons[currentWeapon] ? weaponEvolutions[currentWeapon].name : currentWeapon.charAt(0).toUpperCase() + currentWeapon.slice(1);
+  if (evolvedWeapons[currentWeapon]) {
+      fill(COLORS.uiHighlight);
+      textSize(20);
+      text(`EVOLVED: ${weaponName}`, healthBarX + healthBarWidth + 20, healthBarY + 10);
+  } else {
+      fill(COLORS.text);
+      textSize(18);
+      text(`Weapon: ${weaponName}`, healthBarX + healthBarWidth + 20, healthBarY);
+  }
 
   // Stats
   let statX = healthBarX + healthBarWidth + 20;
@@ -1465,6 +1533,15 @@ class Player {
     this.weapon = currentWeapon;
     this.takenUpgrades = [];
     this.synergies = {};
+    this.weaponLevels = {
+        laser: 0,
+        plasma: 0,
+        wave: 0
+    };
+  }
+
+  getWeaponLevel() {
+    return this.weaponLevels[this.weapon] || 0;
   }
 
   update() {
@@ -1515,7 +1592,7 @@ class Player {
   fire() {
     let baseAngle = atan2(mouseY - this.y, mouseX - this.x);
 
-    if (this.weapon === 'wave') {
+    if (this.weapon === 'wave' || this.weapon === 'Resonance Blaster') {
       let angleSpread = PI / 2; // Wide 90-degree arc
       let numProjectiles = 5 + this.multishot * 2; // More projectiles for a denser wave
       for (let i = 0; i < numProjectiles; i++) {
@@ -1545,6 +1622,9 @@ class Player {
           case 'laser': flashColor = COLORS.projectileLaser; break;
           case 'plasma': flashColor = COLORS.projectilePlasma; break;
           case 'wave': flashColor = COLORS.projectileWave; break;
+          case 'Phasor': flashColor = color(255, 100, 100); break;
+          case 'Singularity Cannon': flashColor = color(150, 50, 255); break;
+          case 'Resonance Blaster': flashColor = color(100, 255, 255); break;
         }
 
         for (let j = 0; j < 3; j++) {
@@ -1613,6 +1693,22 @@ class Projectile {
         this.damage *= 0.7;
         this.lifetime = 45;
         this.size = 8 * this.projectileSize;
+    } else if (this.type === 'Phasor') {
+        this.speed *= 1.5;
+        this.damage *= 0.5;
+        this.lifetime = 20;
+        this.size = 20 * this.projectileSize;
+        this.pierce = Infinity;
+    } else if (this.type === 'Singularity Cannon') {
+        this.speed *= 0.5;
+        this.lifetime = 300;
+        this.size = 15 * this.projectileSize;
+    } else if (this.type === 'Resonance Blaster') {
+        this.speed *= 0.7;
+        this.damage *= 0.8;
+        this.lifetime = 240;
+        this.size = 10 * this.projectileSize;
+        this.bounces = 3;
     } else {
         this.lifetime = 180; // frames
         this.size = 6 * this.projectileSize;
@@ -1631,6 +1727,20 @@ class Projectile {
     this.x += this.vx;
     this.y += this.vy;
 
+    if (this.type === 'Resonance Blaster') {
+        if (this.x < 0 || this.x > width) {
+            this.vx *= -1;
+            this.bounces--;
+        }
+        if (this.y < 0 || this.y > height) {
+            this.vy *= -1;
+            this.bounces--;
+        }
+        if (this.bounces < 0) {
+            this.lifetime = 0;
+        }
+    }
+
     // Create trail particles
     if (frameCount % 2 === 0) {
       let trailColor;
@@ -1638,6 +1748,9 @@ class Projectile {
         case 'laser': trailColor = COLORS.projectileLaser; break;
         case 'plasma': trailColor = COLORS.projectilePlasma; break;
         case 'wave': trailColor = COLORS.projectileWave; break;
+        case 'Phasor': trailColor = color(255, 100, 100); break;
+        case 'Singularity Cannon': trailColor = color(150, 50, 255); break;
+        case 'Resonance Blaster': trailColor = color(100, 255, 255); break;
       }
 
       particles.push(new Particle(this.x, this.y, {
@@ -1681,7 +1794,23 @@ class Projectile {
       strokeWeight(this.size * 0.5);
       let arcSize = this.size * 2;
       arc(0, 0, arcSize, arcSize, -PI/4, PI/4);
+    } else if (this.type === 'Phasor') {
+        stroke(255, 100, 100, 150);
+        strokeWeight(this.size);
+        line(0, 0, -this.size * 5, 0);
+    } else if (this.type === 'Singularity Cannon') {
+        noStroke();
+        fill(150, 50, 255, 100);
+        ellipse(0, 0, this.size * 2, this.size * 2);
+        fill(0);
+        ellipse(0, 0, this.size, this.size);
+    } else if (this.type === 'Resonance Blaster') {
+        noFill();
+        stroke(100, 255, 255, 200);
+        strokeWeight(this.size * 0.3);
+        ellipse(0, 0, this.size * 2, this.size * 2);
     }
+
 
     pop();
   }
@@ -1935,6 +2064,7 @@ class Particle {
     this.alpha = options.alpha || 255;
     this.damaging = options.damaging || false;
     this.damage = options.damage || 0;
+    this.pulls = options.pulls || false;
   }
 
   update() {
