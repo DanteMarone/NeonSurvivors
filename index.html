@@ -96,13 +96,25 @@ let experienceToNextLevel = 100;
 let gameState = 'playing'; // 'playing', 'upgrade', 'gameover'
 let upgradeOptions = [];
 let availableUpgrades = [
-  { name: 'Speed', description: 'Increase movement speed', maxLevel: 5 },
-  { name: 'Damage', description: 'Increase projectile damage', maxLevel: 5 },
-  { name: 'Fire Rate', description: 'Increase firing speed', maxLevel: 5 },
-  { name: 'Projectile Size', description: 'Increase projectile size', maxLevel: 5 },
-  { name: 'Projectile Speed', description: 'Increase projectile velocity', maxLevel: 5 },
-  { name: 'Health', description: 'Increase max health', maxLevel: 5 },
-  { name: 'Multishot', description: 'Fire additional projectiles', maxLevel: 3 }
+  { name: 'Speed', description: 'Increase movement speed', maxLevel: 5, id: 'speed' },
+  { name: 'Damage', description: 'Increase projectile damage', maxLevel: 5, id: 'damage' },
+  { name: 'Fire Rate', description: 'Increase firing speed', maxLevel: 5, id: 'fireRate' },
+  { name: 'Projectile Size', description: 'Increase projectile size', maxLevel: 5, id: 'projectileSize' },
+  { name: 'Projectile Speed', description: 'Increase projectile velocity', maxLevel: 5, id: 'projectileSpeed' },
+  { name: 'Health', description: 'Increase max health', maxLevel: 5, id: 'health' },
+  { name: 'Multishot', description: 'Fire additional projectiles', maxLevel: 3, id: 'multishot' }
+];
+let activeSynergies = [];
+let synergyAlerts = [];
+const synergies = [
+  {
+    name: 'Supernova',
+    description: 'Projectiles create a damaging explosion on impact',
+    required: ['Multishot', 'Projectile Size'],
+    effect: (player) => {
+      player.synergies.supernova = true;
+    }
+  }
 ];
 let weaponTypes = ['laser', 'plasma', 'wave'];
 let currentWeapon = 'laser';
@@ -244,6 +256,9 @@ function updateGame() {
   // Update damage numbers
   updateDamageNumbers();
 
+  // Update synergy alerts
+  updateSynergyAlerts();
+
   // Spawn enemies
   if (frameCount % Math.max(30, 120 - level * 5) === 0) {
     spawnEnemy();
@@ -367,22 +382,25 @@ function updateProjectiles() {
         }
 
         // Handle weapon-specific effects
-        if (p.type === 'plasma') {
-          // Plasma explodes, damaging nearby enemies
+        if (player.synergies.supernova || p.type === 'plasma') {
+          let explosionRadius = (p.type === 'plasma' ? 80 : 60) * p.projectileSize;
+          let explosionDamage = p.damage * (p.type === 'plasma' ? 0.5 : 0.3);
+
           for (let k = enemies.length - 1; k >= 0; k--) {
-            if (k === j) continue; // Don't hit the same enemy twice
+            if (k === j) continue;
             let otherEnemy = enemies[k];
-            let explosionRadius = 80 * p.projectileSize;
             if (dist(p.x, p.y, otherEnemy.x, otherEnemy.y) < explosionRadius) {
-              let damage = p.damage * 0.5;
-              otherEnemy.health -= damage; // Explosion does 50% damage
-              damageNumbers.push(new DamageNumber(otherEnemy.x, otherEnemy.y, damage));
+              otherEnemy.health -= explosionDamage;
+              damageNumbers.push(new DamageNumber(otherEnemy.x, otherEnemy.y, explosionDamage));
               if (otherEnemy.health <= 0) {
                 killEnemy(k);
               }
             }
           }
-          projectiles.splice(i, 1); // Remove plasma projectile on hit
+        }
+
+        if (p.type === 'plasma' || (player.synergies.supernova && p.type !== 'laser')) {
+          projectiles.splice(i, 1);
         } else if (p.type === 'laser') {
           p.pierce--;
           if (p.pierce <= 0) {
@@ -963,14 +981,36 @@ function generateBossUpgradeOptions() {
 function selectUpgrade(index) {
   if (index >= 0 && index < upgradeOptions.length) {
     // Apply the upgrade effect
-    upgradeOptions[index].effect();
+    let selectedUpgrade = upgradeOptions[index];
+    selectedUpgrade.effect();
     if (sounds && sounds.upgrade) sounds.upgrade.play();
+
+    // Add the upgrade to the player's list of taken upgrades
+    if (!player.takenUpgrades.includes(selectedUpgrade.name)) {
+      player.takenUpgrades.push(selectedUpgrade.name);
+    }
 
     // Increment upgrade count
     player.upgradeCount++;
 
+    // Check for new synergies
+    checkForSynergies();
+
     // Return to playing
     gameState = 'playing';
+  }
+}
+
+function checkForSynergies() {
+  for (const synergy of synergies) {
+    if (!activeSynergies.includes(synergy.name)) {
+      const hasAllRequired = synergy.required.every(req => player.takenUpgrades.includes(req));
+      if (hasAllRequired) {
+        activeSynergies.push(synergy.name);
+        synergy.effect(player);
+        synergyAlerts.push({ name: synergy.name, description: synergy.description, lifetime: 180 });
+      }
+    }
   }
 }
 
@@ -1045,6 +1085,42 @@ function drawGame() {
 
   // Draw UI
   drawUI();
+
+  // Draw synergy alerts
+  drawSynergyAlerts();
+}
+
+function updateSynergyAlerts() {
+  for (let i = synergyAlerts.length - 1; i >= 0; i--) {
+    synergyAlerts[i].lifetime--;
+    if (synergyAlerts[i].lifetime <= 0) {
+      synergyAlerts.splice(i, 1);
+    }
+  }
+}
+
+function drawSynergyAlerts() {
+  let yPos = height / 2;
+  for (const alert of synergyAlerts) {
+    let alpha = alert.lifetime > 60 ? 255 : map(alert.lifetime, 0, 60, 0, 255);
+
+    push();
+    textAlign(CENTER, CENTER);
+
+    // Synergy Name
+    textSize(32);
+    fill(COLORS.uiHighlight, alpha);
+    text(`SYNERGY: ${alert.name}`, width / 2, yPos);
+
+    // Synergy Description
+    textSize(18);
+    fill(COLORS.text, alpha);
+    text(alert.description, width / 2, yPos + 40);
+
+    pop();
+
+    yPos -= 100;
+  }
 }
 
 function drawStarfield() {
@@ -1387,6 +1463,8 @@ class Player {
     this.invulnerable = 0; // invulnerability timer
     this.angle = 0; // facing angle
     this.weapon = currentWeapon;
+    this.takenUpgrades = [];
+    this.synergies = {};
   }
 
   update() {
