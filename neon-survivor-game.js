@@ -29,6 +29,7 @@ let gameFont;
 let starfield = [];
 let screenShake = 0;
 let kills = 0;
+let boss = null;
 
 // Color palette
 const COLORS = {
@@ -38,6 +39,7 @@ const COLORS = {
   enemy1: '#ff0066',
   enemy2: '#cc00ff',
   enemy3: '#ff9900',
+  boss: '#ff6600', // A fiery orange for the boss
   projectileLaser: '#00ffcc',
   projectilePlasma: '#ffcc00',
   projectileWave: '#cc66ff',
@@ -145,6 +147,11 @@ function updateGame() {
   // Spawn enemies
   if (frameCount % Math.max(30, 120 - level * 5) === 0) {
     spawnEnemy();
+  }
+
+  // Spawn boss at intervals
+  if (floor(gameTime) > 0 && floor(gameTime) % 180 === 0 && boss === null) {
+    spawnBoss();
   }
   
   // Check for level up
@@ -260,6 +267,25 @@ function fireEnemyProjectile(enemy) {
   });
 }
 
+function fireBossProjectile(enemy) {
+  let numProjectiles = 12;
+  let angleIncrement = TWO_PI / numProjectiles;
+
+  for (let i = 0; i < numProjectiles; i++) {
+    let angle = i * angleIncrement;
+    enemyProjectiles.push({
+      x: enemy.x,
+      y: enemy.y,
+      vx: cos(angle) * 3,
+      vy: sin(angle) * 3,
+      size: 12,
+      damage: enemy.damage,
+      color: enemy.color,
+      lifetime: 300
+    });
+  }
+}
+
 function updateEnemyProjectiles() {
   for (let i = enemyProjectiles.length - 1; i >= 0; i--) {
     let p = enemyProjectiles[i];
@@ -367,6 +393,9 @@ function updateEnemies() {
     // Ranged enemies fire projectiles
     if (e.type === 'ranged' && millis() - e.lastFired > 2000) {
       fireEnemyProjectile(e);
+      e.lastFired = millis();
+    } else if (e.type === 'boss' && millis() - e.lastFired > e.attackCooldown * 16.67) {
+      fireBossProjectile(e);
       e.lastFired = millis();
     }
     
@@ -534,6 +563,36 @@ function updatePickups() {
       });
     }
   }
+}
+
+function spawnBoss() {
+  let spawnEdge = floor(random(4));
+  let spawnX, spawnY;
+
+  switch (spawnEdge) {
+    case 0: spawnX = width / 2; spawnY = -100; break; // Top
+    case 1: spawnX = width + 100; spawnY = height / 2; break; // Right
+    case 2: spawnX = width / 2; spawnY = height + 100; break; // Bottom
+    case 3: spawnX = -100; spawnY = height / 2; break; // Left
+  }
+
+  boss = {
+    x: spawnX,
+    y: spawnY,
+    size: 80,
+    health: 2000 + level * 500,
+    maxHealth: 2000 + level * 500,
+    speed: 0.8,
+    type: 'boss',
+    color: COLORS.boss,
+    damage: 50,
+    angle: 0,
+    pulseTime: 0,
+    attackCooldown: 120, // 2 seconds
+    attackPattern: 'circle',
+    lastFired: 0
+  };
+  enemies.push(boss);
 }
 
 function spawnEnemy() {
@@ -713,6 +772,42 @@ function spawnSquad() {
 
 function killEnemy(index) {
   let e = enemies[index];
+
+  if (e.type === 'boss') {
+    boss = null; // Boss is defeated
+    generateBossUpgradeOptions();
+
+    // Massive explosion and drops
+    for (let i = 0; i < 100; i++) {
+      let angle = random(TWO_PI);
+      let speed = random(2, 8);
+      particles.push({
+        x: e.x, y: e.y,
+        vx: cos(angle) * speed, vy: sin(angle) * speed,
+        size: random(4, 8), lifetime: random(40, 80),
+        color: e.color, alpha: 255
+      });
+    }
+
+    // Drop a ton of experience and health
+    for (let i = 0; i < 20; i++) {
+      pickups.push({
+        x: e.x + random(-50, 50), y: e.y + random(-50, 50),
+        size: 12, type: 'experience', value: 50
+      });
+    }
+    for (let i = 0; i < 5; i++) {
+      pickups.push({
+        x: e.x + random(-50, 50), y: e.y + random(-50, 50),
+        size: 15, type: 'health', value: 50
+      });
+    }
+
+    score += 1000;
+    kills++;
+    enemies.splice(index, 1);
+    return; // Avoid normal enemy death logic
+  }
   
   // Create death explosion
   for (let i = 0; i < 20; i++) {
@@ -872,6 +967,37 @@ function generateUpgradeOptions() {
     // Remove from available pool
     available.splice(index, 1);
   }
+}
+
+function generateBossUpgradeOptions() {
+  upgradeOptions = [
+    {
+      name: 'Ultimate Power',
+      description: 'Damage +50%, Fire Rate +25%',
+      effect: () => {
+        player.damage *= 1.5;
+        player.fireRate = max(100, player.fireRate * 0.75);
+      }
+    },
+    {
+      name: 'Aegis Shield',
+      description: 'Max Health +100%, become invulnerable for 5s',
+      effect: () => {
+        player.maxHealth *= 2;
+        player.health = player.maxHealth;
+        player.invulnerable = 300; // 5 seconds
+      }
+    },
+    {
+      name: 'Warp Drive',
+      description: 'Speed +50%, Multishot +2',
+      effect: () => {
+        player.speed *= 1.5;
+        player.multishot += 2;
+      }
+    }
+  ];
+  gameState = 'upgrade';
 }
 
 function selectUpgrade(index) {
@@ -1154,6 +1280,38 @@ function drawEnemies() {
       // Energy pulse
       fill(e.color);
       ellipse(0, 0, e.size * 0.4 * pulse, e.size * 0.4 * pulse);
+    } else if (e.type === 'boss') {
+      // Boss has a more complex, intimidating design
+      e.pulseTime += 0.02;
+      let pulse = 1 + sin(e.pulseTime) * 0.05;
+
+      // Outer pulsating glow
+      noStroke();
+      fill(e.color, 30);
+      ellipse(0, 0, e.size * 2.5 * pulse, e.size * 2.5 * pulse);
+
+      // Rotating core
+      push();
+      rotate(e.pulseTime * 0.5);
+      fill(e.color, 150);
+      for(let i = 0; i < 4; i++) {
+        rect(-e.size * 0.8, -e.size * 0.1, e.size * 1.6, e.size * 0.2);
+        rotate(HALF_PI);
+      }
+      pop();
+
+      // Main body
+      fill(COLORS.background);
+      stroke(e.color);
+      strokeWeight(4);
+      ellipse(0, 0, e.size * 1.2, e.size * 1.2);
+
+      // Central eye
+      fill(e.color);
+      noStroke();
+      ellipse(0, 0, e.size * 0.5, e.size * 0.5);
+      fill(255, 255, 0);
+      ellipse(0, 0, e.size * 0.3 * pulse, e.size * 0.3 * pulse);
     }
     
     pop();
@@ -1322,6 +1480,35 @@ function drawUI() {
   text(`Damage: ${player.damage}`, statX, statY);
   text(`Fire Rate: ${(1000 / player.fireRate).toFixed(1)}/s`, statX, statY + statSpacing);
   text(`Speed: ${player.speed.toFixed(1)}`, statX, statY + statSpacing * 2);
+
+  // Boss health bar
+  if (boss) {
+    let barWidth = width - 200;
+    let barHeight = 20;
+    let barX = 100;
+    let barY = 20;
+
+    // Boss name
+    textAlign(CENTER, BOTTOM);
+    textSize(20);
+    fill(COLORS.boss);
+    text('!! MEGA-MECH MANTIS !!', width / 2, barY - 5);
+
+    // Health bar
+    noStroke();
+    fill(COLORS.uiBackground);
+    rect(barX, barY, barWidth, barHeight);
+
+    let healthPercent = boss.health / boss.maxHealth;
+    fill(COLORS.boss);
+    rect(barX, barY, barWidth * healthPercent, barHeight);
+
+    // Health text
+    textAlign(CENTER, CENTER);
+    fill(COLORS.text);
+    textSize(14);
+    text(`${ceil(boss.health)} / ${ceil(boss.maxHealth)}`, width / 2, barY + barHeight / 2);
+  }
 }
 
 function formatTime(seconds) {
