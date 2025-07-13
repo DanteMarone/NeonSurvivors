@@ -203,20 +203,39 @@ function updatePlayer() {
 function fireProjectile() {
   let baseAngle = atan2(mouseY - player.y, mouseX - player.x);
   
-  // Calculate spread based on multishot
-  let angleSpread = 0;
-  if (player.multishot > 1) {
-    angleSpread = PI / 8;
-  }
-  
-  for (let i = 0; i < player.multishot; i++) {
-    let angle = baseAngle;
-    
-    // If we have multiple shots, adjust the angle
+  if (player.weapon === 'wave') {
+    let angleSpread = PI / 2; // Wide 90-degree arc
+    let numProjectiles = 5 + player.multishot * 2; // More projectiles for a denser wave
+    for (let i = 0; i < numProjectiles; i++) {
+      let angle = baseAngle - angleSpread / 2 + (angleSpread * i / (numProjectiles - 1));
+      projectiles.push({
+        x: player.x,
+        y: player.y,
+        speed: player.projectileSpeed * 0.8, // Wave is slightly slower
+        vx: cos(angle) * player.projectileSpeed * 0.8,
+        vy: sin(angle) * player.projectileSpeed * 0.8,
+        size: 8 * player.projectileSize,
+        damage: player.damage * 0.7, // Wave does slightly less damage per hit
+        type: player.weapon,
+        lifetime: 45, // Shorter lifetime for shorter range
+        angle: angle
+      });
+    }
+  } else {
+    // Calculate spread based on multishot for laser and plasma
+    let angleSpread = 0;
     if (player.multishot > 1) {
-      angle = baseAngle - angleSpread/2 + (angleSpread * i / (player.multishot - 1));
+      angleSpread = PI / 8;
     }
     
+    for (let i = 0; i < player.multishot; i++) {
+      let angle = baseAngle;
+
+      // If we have multiple shots, adjust the angle
+      if (player.multishot > 1) {
+        angle = baseAngle - angleSpread/2 + (angleSpread * i / (player.multishot - 1));
+      }
+
     projectiles.push({
       x: player.x,
       y: player.y,
@@ -338,38 +357,54 @@ function updateProjectiles() {
     }
     
     // Check for collision with enemies
+    let hitSomething = false;
     for (let j = enemies.length - 1; j >= 0; j--) {
       let e = enemies[j];
       let distance = dist(p.x, p.y, e.x, e.y);
-      
+
       if (distance < p.size + e.size) {
         // Hit enemy
         e.health -= p.damage;
-        
+        hitSomething = true;
+
         // Create hit particles
         for (let k = 0; k < 8; k++) {
           let angle = random(TWO_PI);
           particles.push({
-            x: p.x,
-            y: p.y,
-            vx: cos(angle) * random(1, 3),
-            vy: sin(angle) * random(1, 3),
-            size: random(2, 4),
-            lifetime: random(10, 20),
-            color: e.color,
-            alpha: 255
+            x: p.x, y: p.y,
+            vx: cos(angle) * random(1, 3), vy: sin(angle) * random(1, 3),
+            size: random(2, 4), lifetime: random(10, 20),
+            color: e.color, alpha: 255
           });
         }
-        
-        // Remove projectile
-        projectiles.splice(i, 1);
+
+        // Handle weapon-specific effects
+        if (p.type === 'plasma') {
+          // Plasma explodes, damaging nearby enemies
+          for (let k = enemies.length - 1; k >= 0; k--) {
+            if (k === j) continue; // Don't hit the same enemy twice
+            let otherEnemy = enemies[k];
+            let explosionRadius = 80 * player.projectileSize;
+            if (dist(p.x, p.y, otherEnemy.x, otherEnemy.y) < explosionRadius) {
+              otherEnemy.health -= p.damage * 0.5; // Explosion does 50% damage
+              if (otherEnemy.health <= 0) {
+                killEnemy(k);
+              }
+            }
+          }
+          projectiles.splice(i, 1); // Remove plasma projectile on hit
+        } else if (p.type !== 'laser') {
+          projectiles.splice(i, 1); // Remove non-laser projectiles on hit
+        }
         
         // Check if enemy is dead
         if (e.health <= 0) {
           killEnemy(j);
         }
-        
-        break;
+
+        if (p.type !== 'laser') {
+          break; // Exit enemy loop if projectile was removed
+        }
       }
     }
     
@@ -1171,16 +1206,12 @@ function drawProjectiles() {
       fill(255);
       ellipse(0, 0, p.size * 0.5, p.size * 0.5);
     } else if (p.type === 'wave') {
-      // Wave projectile
+      // Wave projectile - a simple, wide arc
       noFill();
-      for (let i = 3; i > 0; i--) {
-        let weight = p.size * 0.3 * (4 - i) / 3;
-        let alpha = 255 - (i * 40);
-        stroke(COLORS.projectileWave, alpha);
-        strokeWeight(weight);
-        arc(0, 0, p.size * i, p.size * i * 2, -QUARTER_PI, QUARTER_PI);
-        arc(0, 0, p.size * i, p.size * i * 2, HALF_PI + QUARTER_PI, PI + QUARTER_PI);
-      }
+      stroke(COLORS.projectileWave, 200);
+      strokeWeight(p.size * 0.5);
+      let arcSize = p.size * 2;
+      arc(0, 0, arcSize, arcSize, -PI/4, PI/4);
     }
     
     pop();
