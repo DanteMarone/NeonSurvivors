@@ -111,8 +111,11 @@ let score = 0;
 let level = 1;
 let experience = 0;
 let experienceToNextLevel = 100;
-let gameState = 'playing'; // 'playing', 'upgrade', 'gameover'
+let gameState = 'mainmenu'; // 'mainmenu', 'playing', 'upgrade', 'gameover', 'upgrades'
 let upgradeOptions = [];
+let permanentCurrency = 0;
+let globalUpgrades = {};
+
 let availableUpgrades = [
   { name: 'Speed', description: 'Increase movement speed', maxLevel: 5, id: 'speed' },
   { name: 'Damage', description: 'Increase projectile damage', maxLevel: 5, id: 'damage' },
@@ -125,6 +128,11 @@ let availableUpgrades = [
   { name: 'Graviton Emitter', description: 'Required for Singularity Cannon evolution', maxLevel: 1, id: 'gravitonEmitter' },
   { name: 'Sonic Amplifier', description: 'Required for Resonance Blaster evolution', maxLevel: 1, id: 'sonicAmplifier' }
 ];
+const globalUpgradeTypes = {
+  bonus_stats: { name: 'Bonus Stats', description: 'Start with a permanent bonus to your stats.', cost: 100, maxLevel: 5 },
+  new_items: { name: 'New Items', description: 'Unlock new items to find in the level-up pool.', cost: 250, maxLevel: 3 },
+  reroll_ability: { name: 'Reroll', description: 'Gain the ability to reroll your upgrade choices.', cost: 500, maxLevel: 3 }
+};
 let activeSynergies = [];
 let synergyAlerts = [];
 const synergies = [
@@ -186,6 +194,7 @@ function preload() {
 function setup() {
   let canvas = createCanvas(800, 600);
   canvas.parent('canvas-container');
+  loadProgress();
   strokeJoin(ROUND);
   strokeCap(ROUND);
 
@@ -232,6 +241,10 @@ function draw() {
   } else if (gameState === 'gameover') {
     drawGame();
     drawGameOverScreen();
+  } else if (gameState === 'mainmenu') {
+    drawMainMenu();
+  } else if (gameState === 'upgrades') {
+    drawUpgradeStore();
   }
 
   // Apply screen shake
@@ -907,6 +920,20 @@ function levelUp() {
 function generateUpgradeOptions() {
   upgradeOptions = [];
 
+  // Add new items from global upgrades
+  if (globalUpgrades.new_items) {
+    let level = globalUpgrades.new_items;
+    if (level >= 1 && !availableUpgrades.find(u => u.id === 'homing')) {
+      availableUpgrades.push({ name: 'Homing Missiles', description: 'Fire missiles that seek enemies.', maxLevel: 3, id: 'homing' });
+    }
+    if (level >= 2 && !availableUpgrades.find(u => u.id === 'chain_lightning')) {
+      availableUpgrades.push({ name: 'Chain Lightning', description: 'Projectiles can chain to nearby enemies.', maxLevel: 3, id: 'chain_lightning' });
+    }
+    if (level >= 3 && !availableUpgrades.find(u => u.id === 'shield')) {
+      availableUpgrades.push({ name: 'Energy Shield', description: 'A shield that blocks enemy projectiles.', maxLevel: 1, id: 'shield' });
+    }
+  }
+
   // Get available upgrades (not at max level)
   let available = availableUpgrades.filter(upgrade => {
     if (upgrade.name === 'Speed' && player.speed >= 5) return false;
@@ -1078,10 +1105,67 @@ function checkForWeaponEvolution() {
 function gameOver() {
   gameState = 'gameover';
   if (sounds && sounds.gameOver) sounds.gameOver.play();
+
+  // Award permanent currency
+  let currencyEarned = floor(score / 100);
+  permanentCurrency += currencyEarned;
+
+  // Save progress
+  saveProgress();
+}
+
+function saveProgress() {
+  let progress = {
+    permanentCurrency: permanentCurrency,
+    globalUpgrades: globalUpgrades
+  };
+  localStorage.setItem('neonSurvivorProgress', JSON.stringify(progress));
+}
+
+function loadProgress() {
+  let savedProgress = localStorage.getItem('neonSurvivorProgress');
+  if (savedProgress) {
+    let progress = JSON.parse(savedProgress);
+    permanentCurrency = progress.permanentCurrency || 0;
+    globalUpgrades = progress.globalUpgrades || {};
+  }
 }
 
 function mouseClicked() {
-  if (gameState === 'upgrade') {
+  if (gameState === 'mainmenu') {
+    let playButton = { x: width / 2 - 100, y: height / 2, w: 200, h: 50 };
+    if (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h) {
+      gameState = 'playing';
+      resetGame();
+    }
+
+    let upgradesButton = { x: width / 2 - 100, y: height / 2 + 70, w: 200, h: 50 };
+    if (mouseX > upgradesButton.x && mouseX < upgradesButton.x + upgradesButton.w && mouseY > upgradesButton.y && mouseY < upgradesButton.y + upgradesButton.h) {
+      gameState = 'upgrades';
+    }
+  } else if (gameState === 'upgrades') {
+    let backButton = { x: 20, y: 20, w: 100, h: 40 };
+    if (mouseX > backButton.x && mouseX < backButton.x + backButton.w && mouseY > backButton.y && mouseY < backButton.y + backButton.h) {
+      gameState = 'mainmenu';
+    }
+
+    let upgradeY = 150;
+    for (let key in globalUpgradeTypes) {
+      let upgrade = globalUpgradeTypes[key];
+      let level = globalUpgrades[key] || 0;
+      let cost = upgrade.cost * (level + 1);
+      let purchaseButton = { x: 500, y: upgradeY, w: 200, h: 50 };
+
+      if (mouseX > purchaseButton.x && mouseX < purchaseButton.x + purchaseButton.w && mouseY > purchaseButton.y && mouseY < purchaseButton.y + purchaseButton.h) {
+        if (permanentCurrency >= cost && level < upgrade.maxLevel) {
+          permanentCurrency -= cost;
+          globalUpgrades[key] = (globalUpgrades[key] || 0) + 1;
+          saveProgress();
+        }
+      }
+      upgradeY += 100;
+    }
+  } else if (gameState === 'upgrade') {
     // Check if clicked on an upgrade option
     let boxWidth = 200;
     let boxHeight = 100;
@@ -1115,8 +1199,49 @@ function keyPressed() {
 
   // Space to restart game
   if (gameState === 'gameover' && keyCode === 32) {
-    setup();
+    resetGame();
+    gameState = 'mainmenu';
   }
+
+  // R to reroll upgrades
+  if (gameState === 'upgrade' && keyCode === 82) {
+    if (globalUpgrades.reroll_ability && player.rerolls > 0) {
+      player.rerolls--;
+      generateUpgradeOptions();
+    }
+  }
+}
+
+function drawMainMenu() {
+  background(COLORS.background);
+  textAlign(CENTER, CENTER);
+
+  // Title
+  fill(COLORS.uiHighlight);
+  textSize(64);
+  text('NEON SURVIVOR', width / 2, height / 4);
+
+  // Play Button
+  let playButton = { x: width / 2 - 100, y: height / 2, w: 200, h: 50 };
+  fill(COLORS.uiBackground);
+  rect(playButton.x, playButton.y, playButton.w, playButton.h, 10);
+  fill(COLORS.text);
+  textSize(24);
+  text('Play', playButton.x + playButton.w / 2, playButton.y + playButton.h / 2);
+
+  // Upgrades Button
+  let upgradesButton = { x: width / 2 - 100, y: height / 2 + 70, w: 200, h: 50 };
+  fill(COLORS.uiBackground);
+  rect(upgradesButton.x, upgradesButton.y, upgradesButton.w, upgradesButton.h, 10);
+  fill(COLORS.text);
+  textSize(24);
+  text('Upgrades', upgradesButton.x + upgradesButton.w / 2, upgradesButton.y + upgradesButton.h / 2);
+
+  // Display permanent currency
+  textAlign(RIGHT, TOP);
+  fill(COLORS.text);
+  textSize(18);
+  text(`Crystals: ${permanentCurrency}`, width - 20, 20);
 }
 
 function drawGame() {
@@ -1483,6 +1608,14 @@ function drawUpgradeScreen() {
     fill(COLORS.text, 150);
     text(`Press ${i + 1}`, x + boxWidth / 2, y + boxHeight - 15);
   }
+
+  // Draw reroll count
+  if (globalUpgrades.reroll_ability) {
+    textAlign(CENTER, BOTTOM);
+    fill(COLORS.text);
+    textSize(18);
+    text(`Rerolls available: ${player.rerolls} (Press R)`, width / 2, height - 20);
+  }
 }
 
 function drawGameOverScreen() {
@@ -1509,6 +1642,79 @@ function drawGameOverScreen() {
   text('Press SPACE to restart', width / 2, height * 3 / 4);
 }
 
+function drawUpgradeStore() {
+  background(COLORS.background);
+  textAlign(CENTER, CENTER);
+
+  // Title
+  fill(COLORS.uiHighlight);
+  textSize(48);
+  text('Global Upgrades', width / 2, 80);
+
+  // Display permanent currency
+  textAlign(RIGHT, TOP);
+  fill(COLORS.text);
+  textSize(18);
+  text(`Crystals: ${permanentCurrency}`, width - 20, 20);
+
+  // Back Button
+  let backButton = { x: 20, y: 20, w: 100, h: 40 };
+  fill(COLORS.uiBackground);
+  rect(backButton.x, backButton.y, backButton.w, backButton.h, 10);
+  fill(COLORS.text);
+  textSize(18);
+  text('Back', backButton.x + backButton.w / 2, backButton.y + backButton.h / 2);
+
+  // Draw upgrade options
+  let upgradeY = 150;
+  for (let key in globalUpgradeTypes) {
+    let upgrade = globalUpgradeTypes[key];
+    let level = globalUpgrades[key] || 0;
+
+    textAlign(LEFT, TOP);
+    fill(COLORS.text);
+    textSize(22);
+    text(upgrade.name, 100, upgradeY);
+
+    textSize(16);
+    text(upgrade.description, 100, upgradeY + 30);
+
+    let cost = upgrade.cost * (level + 1);
+    let buttonText = level >= upgrade.maxLevel ? 'Max Level' : `Cost: ${cost}`;
+    let purchaseButton = { x: 500, y: upgradeY, w: 200, h: 50 };
+
+    fill(COLORS.uiBackground);
+    rect(purchaseButton.x, purchaseButton.y, purchaseButton.w, purchaseButton.h, 10);
+
+    fill(COLORS.text);
+    textSize(18);
+    text(buttonText, purchaseButton.x + purchaseButton.w / 2, purchaseButton.y + purchaseButton.h / 2);
+
+    upgradeY += 100;
+  }
+}
+
+function resetGame() {
+  player = new Player(width / 2, height / 2);
+  enemies = [];
+  projectiles = [];
+  enemyProjectiles = [];
+  particles = [];
+  pickups = [];
+  damageNumbers = [];
+  gameTime = 0;
+  score = 0;
+  level = 1;
+  experience = 0;
+  experienceToNextLevel = 100;
+  upgradeOptions = [];
+  activeSynergies = [];
+  synergyAlerts = [];
+  evolvedWeapons = {};
+  currentWeapon = 'laser';
+  boss = null;
+}
+
 const RANGED_ENEMY_COOLDOWN = 2000;
 const BOSS_ATTACK_COOLDOWN = 2000;
 const TRAIL_PARTICLE_LIFETIME = 180;
@@ -1524,6 +1730,18 @@ class Player {
     this.damage = 20;
     this.fireRate = 300; // milliseconds between shots
     this.lastFired = 0;
+    this.rerolls = 0;
+
+    // Apply global upgrades
+    if (globalUpgrades.bonus_stats) {
+      let level = globalUpgrades.bonus_stats;
+      this.health += level * 10;
+      this.maxHealth += level * 10;
+      this.damage += level * 2;
+    }
+    if (globalUpgrades.reroll_ability) {
+      this.rerolls = globalUpgrades.reroll_ability;
+    }
     this.projectileSize = 1;
     this.projectileSpeed = 5;
     this.multishot = 1;
