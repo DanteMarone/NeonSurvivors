@@ -81,6 +81,37 @@
         // Neon Survivor - A Vampire Survivors style game with futuristic theme
 // All assets created programmatically with P5.js
 
+const ships = [
+    {
+        name: 'Default',
+        description: 'A standard ship with no special modifications.',
+        startingWeapon: 'laser',
+        trait: null,
+        unlockCondition: () => true,
+    },
+    {
+        name: 'Juggernaut',
+        description: 'A heavy ship with increased health and damage, but reduced speed.',
+        startingWeapon: 'plasma',
+        trait: {
+            health: 1.2,
+            damage: 1.1,
+            speed: 0.9,
+        },
+        unlockCondition: (stats) => stats.totalKills >= 100,
+    },
+    {
+        name: 'Interceptor',
+        description: 'A fast and agile ship with a high-speed cannon.',
+        startingWeapon: 'laser',
+        trait: {
+            speed: 1.2,
+            fireRate: 0.9,
+        },
+        unlockCondition: (stats) => stats.longestTime >= 300,
+    },
+];
+
 const weaponEvolutions = {
     laser: {
         name: 'Phasor',
@@ -111,7 +142,7 @@ let score = 0;
 let level = 1;
 let experience = 0;
 let experienceToNextLevel = 100;
-let gameState = 'playing'; // 'playing', 'upgrade', 'gameover'
+let gameState = 'shipSelection'; // 'shipSelection', 'playing', 'upgrade', 'gameover'
 let upgradeOptions = [];
 let availableUpgrades = [
   { name: 'Speed', description: 'Increase movement speed', maxLevel: 5, id: 'speed' },
@@ -146,6 +177,10 @@ let screenShake = 0;
 let kills = 0;
 let boss = null;
 let sounds;
+let gameStats = {
+    totalKills: 0,
+    longestTime: 0,
+};
 
 // Color palette
 const COLORS = {
@@ -232,7 +267,9 @@ function draw() {
   } else if (gameState === 'gameover') {
     drawGame();
     drawGameOverScreen();
-  }
+  } else if (gameState === 'shipSelection') {
+    drawShipSelectionScreen();
+    }
 
   // Apply screen shake
   if (screenShake > 0) {
@@ -1076,11 +1113,32 @@ function checkForWeaponEvolution() {
 }
 
 function gameOver() {
+    gameStats.totalKills += kills;
+    if (gameTime > gameStats.longestTime) {
+        gameStats.longestTime = gameTime;
+    }
   gameState = 'gameover';
   if (sounds && sounds.gameOver) sounds.gameOver.play();
 }
 
 function mouseClicked() {
+    if (gameState === 'shipSelection') {
+        let boxWidth = 250;
+        let boxHeight = 150;
+        let boxSpacing = 60;
+        let totalWidth = ships.length * boxWidth + (ships.length - 1) * boxSpacing;
+        let startX = (width - totalWidth) / 2;
+
+        for (let i = 0; i < ships.length; i++) {
+            let x = startX + i * (boxWidth + boxSpacing);
+            let y = height / 2 - boxHeight / 2;
+
+            if (mouseX >= x && mouseX <= x + boxWidth && mouseY >= y && mouseY <= y + boxHeight) {
+                selectShip(i);
+                break;
+            }
+        }
+    }
   if (gameState === 'upgrade') {
     // Check if clicked on an upgrade option
     let boxWidth = 200;
@@ -1507,6 +1565,71 @@ function drawGameOverScreen() {
   textSize(18);
   fill(COLORS.uiHighlight);
   text('Press SPACE to restart', width / 2, height * 3 / 4);
+}
+
+function selectShip(index) {
+    if (index >= 0 && index < ships.length) {
+        let ship = ships[index];
+        if (!ship.unlockCondition(gameStats)) return;
+
+        currentWeapon = ship.startingWeapon;
+        player.weapon = ship.startingWeapon;
+
+        if (ship.trait) {
+            if (ship.trait.health) player.maxHealth *= ship.trait.health;
+            if (ship.trait.damage) player.damage *= ship.trait.damage;
+            if (ship.trait.speed) player.speed *= ship.trait.speed;
+            if (ship.trait.fireRate) player.fireRate *= ship.trait.fireRate;
+        }
+
+        player.health = player.maxHealth;
+        gameState = 'playing';
+    }
+}
+
+function drawShipSelectionScreen() {
+    background(COLORS.background);
+    textAlign(CENTER, CENTER);
+    fill(COLORS.text);
+    textSize(36);
+    text('SELECT YOUR SHIP', width / 2, height / 8);
+
+    let boxWidth = 250;
+    let boxHeight = 150;
+    let boxSpacing = 60;
+    let totalWidth = ships.length * boxWidth + (ships.length - 1) * boxSpacing;
+    let startX = (width - totalWidth) / 2;
+
+    for (let i = 0; i < ships.length; i++) {
+        let ship = ships[i];
+        let x = startX + i * (boxWidth + boxSpacing);
+        let y = height / 2 - boxHeight / 2;
+
+        let isHovered = mouseX >= x && mouseX <= x + boxWidth && mouseY >= y && mouseY <= y + boxHeight;
+        let isUnlocked = ship.unlockCondition(gameStats);
+
+        fill(isUnlocked ? COLORS.uiBackground : color(50));
+        if (isHovered && isUnlocked) {
+            stroke(COLORS.uiHighlight);
+            strokeWeight(3);
+        } else {
+            noStroke();
+        }
+        rect(x, y, boxWidth, boxHeight, 10);
+
+        textAlign(CENTER, CENTER);
+        noStroke();
+        fill(isHovered ? COLORS.uiHighlight : COLORS.text);
+        textSize(24);
+        text(ship.name, x + boxWidth / 2, y + 30);
+
+        textSize(16);
+        text(ship.description, x + boxWidth / 2, y + 70);
+
+        textSize(14);
+        fill(COLORS.text, 150);
+        text(`Starts with: ${ship.startingWeapon}`, x + boxWidth / 2, y + boxHeight - 25);
+    }
 }
 
 const RANGED_ENEMY_COOLDOWN = 2000;
