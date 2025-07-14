@@ -203,16 +203,33 @@ function setup() {
     COLORS[key] = color(COLORS[key]);
   }
 
-  // Setup starfield
-  for (let i = 0; i < 100; i++) {
-    starfield.push({
-      x: random(width),
-      y: random(height),
-      size: random(1, 3),
-      speed: random(0.2, 1),
-      brightness: random(100, 255)
-    });
+  // Setup starfield with parallax
+  starfield = {
+      near: [],
+      mid: [],
+      far: [],
+      nebulas: []
+  };
+  for (let i = 0; i < 50; i++) { // Near stars
+      starfield.near.push({ x: random(width), y: random(height), size: random(2, 4), speed: 1 });
   }
+  for (let i = 0; i < 100; i++) { // Mid stars
+      starfield.mid.push({ x: random(width), y: random(height), size: random(1, 2.5), speed: 0.5 });
+  }
+  for (let i = 0; i < 200; i++) { // Far stars
+      starfield.far.push({ x: random(width), y: random(height), size: random(0.5, 1.5), speed: 0.2 });
+  }
+  // Generate a few nebulas
+    for (let i = 0; i < 3; i++) {
+        starfield.nebulas.push({
+            x: random(width),
+            y: random(height),
+            size: random(200, 400),
+            color: color(random(50, 100), random(20, 50), random(80, 150), 30),
+            noiseSeed: random(1000)
+        });
+    }
+
 
   // Initialize player
   player = new Player(width / 2, height / 2);
@@ -801,19 +818,33 @@ function killEnemy(index) {
     boss = null; // Boss is defeated
     generateBossUpgradeOptions();
 
-    // Massive explosion and drops
-    for (let i = 0; i < 100; i++) {
-      let angle = random(TWO_PI);
-      let speed = random(2, 8);
-      particles.push(new Particle(e.x, e.y, {
-        vx: cos(angle) * speed,
-        vy: sin(angle) * speed,
-        size: random(4, 8),
-        lifetime: random(40, 80),
-        color: e.color,
-        alpha: 255
-      }));
+    // Massive, multi-layered explosion
+    // Core explosion
+    for (let i = 0; i < 50; i++) {
+        let angle = random(TWO_PI);
+        let speed = random(5, 15);
+        particles.push(new Particle(e.x, e.y, {
+            vx: cos(angle) * speed, vy: sin(angle) * speed,
+            size: random(10, 20), lifetime: random(60, 100),
+            color: color(255, 255, 200), alpha: 255
+        }));
     }
+    // Shockwave
+    particles.push(new Particle(e.x, e.y, {
+        vx: 0, vy: 0, size: 10, lifetime: 30,
+        color: color(255, 150, 100), expands: true, expansionRate: 20
+    }));
+    // Debris
+    for (let i = 0; i < 80; i++) {
+        let angle = random(TWO_PI);
+        let speed = random(2, 8);
+        particles.push(new Particle(e.x, e.y, {
+            vx: cos(angle) * speed, vy: sin(angle) * speed,
+            size: random(4, 8), lifetime: random(80, 120),
+            color: e.color, alpha: 255, gravity: 0.1
+        }));
+    }
+
 
     // Drop a ton of experience and health
     for (let i = 0; i < 20; i++) {
@@ -835,19 +866,35 @@ function killEnemy(index) {
     return; // Avoid normal enemy death logic
   }
 
-  // Create death explosion
-  for (let i = 0; i < 20; i++) {
-    let angle = random(TWO_PI);
-    let speed = random(1, 4);
-    particles.push(new Particle(e.x, e.y, {
-      vx: cos(angle) * speed,
-      vy: sin(angle) * speed,
-      size: random(3, 6),
-      lifetime: random(20, 40),
-      color: e.color,
-      alpha: 255
-    }));
-  }
+  // Create death explosion with more layers
+    // Core flash
+    for (let i = 0; i < 10; i++) {
+        let angle = random(TWO_PI);
+        let speed = random(2, 5);
+        particles.push(new Particle(e.x, e.y, {
+            vx: cos(angle) * speed, vy: sin(angle) * speed,
+            size: random(5, 10), lifetime: random(10, 20),
+            color: color(255, 255, 200), alpha: 255
+        }));
+    }
+    // Colored particles
+    for (let i = 0; i < 15; i++) {
+        let angle = random(TWO_PI);
+        let speed = random(1, 4);
+        particles.push(new Particle(e.x, e.y, {
+            vx: cos(angle) * speed, vy: sin(angle) * speed,
+            size: random(3, 6), lifetime: random(20, 40),
+            color: e.color, alpha: 220, gravity: 0.05
+        }));
+    }
+    // Smoke
+    for (let i = 0; i < 5; i++) {
+        particles.push(new Particle(e.x, e.y, {
+            vx: random(-1, 1), vy: random(-1, 1),
+            size: random(10, 15), lifetime: random(30, 50),
+            color: color(100, 100, 100), alpha: 150
+        }));
+    }
 
   // Drop experience
   let expValue = 5;
@@ -1310,21 +1357,42 @@ function drawSynergyAlerts() {
 }
 
 function drawStarfield() {
-  // Draw stars
-  for (let star of starfield) {
-    fill(star.brightness);
-    noStroke();
-    ellipse(star.x, star.y, star.size, star.size);
+    // Draw nebulas
+    for (let nebula of starfield.nebulas) {
+        push();
+        noStroke();
+        noiseSeed(nebula.noiseSeed);
+        for (let i = 0; i < 50; i++) {
+            let x = nebula.x + (noise(i * 0.1, frameCount * 0.001) - 0.5) * nebula.size;
+            let y = nebula.y + (noise(i * 0.1 + 100, frameCount * 0.001) - 0.5) * nebula.size;
+            let size = noise(i * 0.2) * 100;
+            fill(nebula.color);
+            ellipse(x, y, size, size);
+        }
+        pop();
+    }
+  // Draw star layers
+  function drawLayer(stars, brightness) {
+    for (let star of stars) {
+        fill(brightness);
+        noStroke();
+        ellipse(star.x, star.y, star.size, star.size);
 
-    // Move stars slowly
-    star.y += star.speed;
+        // Move stars based on player movement for parallax
+        star.x -= player.speed * star.speed * 0.1 * (keyIsDown(68) ? 1 : (keyIsDown(65) ? -1 : 0));
+        star.y -= player.speed * star.speed * 0.1 * (keyIsDown(83) ? 1 : (keyIsDown(87) ? -1 : 0));
 
-    // Wrap stars
-    if (star.y > height) {
-      star.y = 0;
-      star.x = random(width);
+
+        // Wrap stars
+        if (star.x < 0) star.x = width;
+        if (star.x > width) star.x = 0;
+        if (star.y < 0) star.y = height;
+        if (star.y > height) star.y = 0;
     }
   }
+  drawLayer(starfield.far, 100);
+  drawLayer(starfield.mid, 180);
+  drawLayer(starfield.near, 255);
 }
 
 function drawPlayer() {
@@ -1870,26 +1938,53 @@ class Player {
 
     // Pulse effect for shield when invulnerable
     if (this.invulnerable > 0) {
-      let pulseSize = 1.2 + sin(frameCount * 0.2) * 0.1;
-      ellipse(0, 0, this.size * 2 * pulseSize, this.size * 2 * pulseSize);
+        let pulseSize = 1.2 + sin(frameCount * 0.2) * 0.1;
+        ellipse(0, 0, this.size * 2 * pulseSize, this.size * 2 * pulseSize);
     }
 
-    // Draw ship base
-    fill(COLORS.player);
+    // Engine glow
+    let engineGlow = 1 + sin(frameCount * 0.5) * 0.2;
+    fill(255, 100, 0, 150);
     beginShape();
-    vertex(this.size, 0);
-    vertex(-this.size/2, this.size/2);
-    vertex(-this.size/4, 0);
-    vertex(-this.size/2, -this.size/2);
+    vertex(-this.size * 0.6, 0);
+    vertex(-this.size * 0.8, this.size * 0.3 * engineGlow);
+    vertex(-this.size * 1.2, 0);
+    vertex(-this.size * 0.8, -this.size * 0.3 * engineGlow);
     endShape(CLOSE);
 
-    // Draw cockpit
-    fill(COLORS.background);
-    ellipse(this.size/4, 0, this.size/2, this.size/3);
 
-    // Draw engine glow
-    fill(COLORS.projectileLaser);
-    ellipse(-this.size/3, 0, this.size/3, this.size/6);
+    // Ship body
+    fill(100, 150, 255); // Main body color
+    stroke(200, 220, 255); // Light outline
+    strokeWeight(2);
+
+    beginShape();
+    vertex(this.size, 0); // Nose
+    vertex(-this.size * 0.8, this.size * 0.6); // Right wing
+    vertex(-this.size * 0.6, 0); // Back center
+    vertex(-this.size * 0.8, -this.size * 0.6); // Left wing
+    endShape(CLOSE);
+
+    // Cockpit
+    fill(20, 20, 50, 200); // Dark, semi-transparent
+    stroke(100, 150, 255, 150);
+    strokeWeight(1);
+    ellipse(this.size * 0.4, 0, this.size * 0.8, this.size * 0.6);
+
+    // Weapon ports
+    let firing = (millis() - this.lastFired) < 100;
+    if (firing) {
+        fill(255, 200, 0); // Yellow glow when firing
+        noStroke();
+        ellipse(this.size * 0.7, this.size * 0.4, this.size * 0.2, this.size * 0.2);
+        ellipse(this.size * 0.7, -this.size * 0.4, this.size * 0.2, this.size * 0.2);
+    } else {
+        fill(100, 120, 180); // Default color
+        stroke(150, 180, 220);
+        strokeWeight(1);
+        ellipse(this.size * 0.7, this.size * 0.4, this.size * 0.15, this.size * 0.15);
+        ellipse(this.size * 0.7, -this.size * 0.4, this.size * 0.15, this.size * 0.15);
+    }
 
     pop();
   }
@@ -1990,45 +2085,81 @@ class Projectile {
 
     // Different projectile types
     if (this.type === 'laser') {
-      stroke(COLORS.projectileLaser);
-      strokeWeight(this.size);
-      line(0, 0, -this.size * 3, 0);
+        // Outer glow
+        stroke(0, 255, 200, 100);
+        strokeWeight(this.size * 1.5);
+        line(0, 0, -this.size * 4, 0);
+        // Inner core
+        stroke(255);
+        strokeWeight(this.size * 0.5);
+        line(0, 0, -this.size * 4, 0);
 
-      noStroke();
-      fill(COLORS.projectileLaser);
-      ellipse(0, 0, this.size * 1.5, this.size);
     } else if (this.type === 'plasma') {
-      noStroke();
-      for (let i = 3; i > 0; i--) {
-        let alpha = 255 - (i * 40);
-        fill(COLORS.projectilePlasma, alpha);
-        ellipse(0, 0, this.size * (1 + i * 0.3), this.size * (1 + i * 0.3));
-      }
-      fill(255);
-      ellipse(0, 0, this.size * 0.5, this.size * 0.5);
+        noStroke();
+        // Swirling energy
+        let pulse = sin(frameCount * 0.4) * this.size * 0.2;
+        for (let i = 5; i > 0; i--) {
+            let alpha = 255 - (i * 50);
+            let d = this.size * (1 + i * 0.2) + pulse;
+            fill(255, 220, 100, alpha);
+            ellipse(0, 0, d, d);
+        }
+        // Crackling particles
+        for(let i = 0; i < 2; i++) {
+            let angle = random(TWO_PI);
+            let r = this.size * 0.8;
+            let x = cos(angle) * r;
+            let y = sin(angle) * r;
+            fill(255, 255, 200, random(150, 255));
+            ellipse(x, y, this.size * 0.3, this.size * 0.3);
+        }
+
     } else if (this.type === 'wave') {
-      noFill();
-      stroke(COLORS.projectileWave, 200);
-      strokeWeight(this.size * 0.5);
-      let arcSize = this.size * 2;
-      arc(0, 0, arcSize, arcSize, -PI/4, PI/4);
+        noFill();
+        stroke(200, 100, 255, 220);
+        strokeWeight(this.size * 0.6);
+        let arcSize = this.size * 2.5;
+        arc(0, 0, arcSize, arcSize, -PI/3, PI/3);
+        stroke(255, 200, 255, 150);
+        strokeWeight(this.size * 0.3);
+        arc(0, 0, arcSize * 1.2, arcSize * 1.2, -PI/3, PI/3);
+
     } else if (this.type === 'Phasor') {
-        stroke(255, 100, 100, 150);
-        strokeWeight(this.size);
-        line(0, 0, -this.size * 5, 0);
+        // Wide, continuous beam
+        stroke(255, 80, 80, 180);
+        strokeWeight(this.size * 1.2);
+        line(0, 0, -this.size * 6, 0);
+        stroke(255, 150, 150, 220);
+        strokeWeight(this.size * 0.6);
+        line(0, 0, -this.size * 6, 0);
+
     } else if (this.type === 'Singularity Cannon') {
         noStroke();
-        fill(150, 50, 255, 100);
-        ellipse(0, 0, this.size * 2, this.size * 2);
+        // Gravitational lens effect
+        for(let i = 0; i < 10; i++) {
+            let angle = random(TWO_PI);
+            let r = random(this.size, this.size * 2);
+            let x = cos(angle) * r;
+            let y = sin(angle) * r;
+            fill(random(100, 200), 50, 255, 50);
+            ellipse(x, y, this.size * 0.5, this.size * 0.5);
+        }
+        // Black hole core
         fill(0);
         ellipse(0, 0, this.size, this.size);
+
     } else if (this.type === 'Resonance Blaster') {
         noFill();
-        stroke(100, 255, 255, 200);
-        strokeWeight(this.size * 0.3);
-        ellipse(0, 0, this.size * 2, this.size * 2);
+        let pulse = sin(frameCount * 0.3) * 0.1 + 1.0;
+        // Outer ring
+        stroke(100, 255, 255, 255);
+        strokeWeight(this.size * 0.2 * pulse);
+        ellipse(0, 0, this.size * 2.5, this.size * 2.5);
+        // Inner ring
+        stroke(200, 255, 255, 150);
+        strokeWeight(this.size * 0.4);
+        ellipse(0, 0, this.size * 1.8 * pulse, this.size * 1.8 * pulse);
     }
-
 
     pop();
   }
@@ -2167,103 +2298,119 @@ class Enemy {
     let healthPercent = this.health / this.maxHealth;
 
     if (healthPercent < 1) {
-      push();
-      translate(0, -this.size - 10);
-      noStroke();
-      fill(100, 100, 100, 150);
-      rect(-this.size, -2, this.size * 2, 4);
-      fill(255, 0, 50, 200);
-      rect(-this.size, -2, this.size * 2 * healthPercent, 4);
-      pop();
+        push();
+        translate(0, -this.size - 10);
+        noStroke();
+        fill(100, 100, 100, 150);
+        rect(-this.size, -2, this.size * 2, 4);
+        fill(255, 0, 50, 200);
+        rect(-this.size, -2, this.size * 2 * healthPercent, 4);
+        pop();
     }
 
     // Different enemy types
     if (this.type === 'basic') {
-      noStroke();
-      this.pulseTime += 0.05;
-      let pulse = 1 + sin(this.pulseTime) * 0.1;
+        noStroke();
+        this.pulseTime += 0.05;
+        let pulse = 1 + sin(this.pulseTime) * 0.1;
 
-      fill(this.color, 50);
-      ellipse(0, 0, this.size * 2.5 * pulse, this.size * 2.5 * pulse);
+        fill(this.color, 50);
+        ellipse(0, 0, this.size * 2.5 * pulse, this.size * 2.5 * pulse);
 
-      fill(this.color);
-      beginShape();
-      vertex(this.size, 0);
-      vertex(-this.size, this.size);
-      vertex(-this.size/2, 0);
-      vertex(-this.size, -this.size);
-      endShape(CLOSE);
+        // Body
+        fill(this.color);
+        beginShape();
+        vertex(this.size, 0);
+        vertex(-this.size * 0.5, this.size * 0.8);
+        vertex(-this.size, 0);
+        vertex(-this.size * 0.5, -this.size * 0.8);
+        endShape(CLOSE);
 
-      fill(255);
-      ellipse(this.size / 2, 0, this.size / 2, this.size / 2);
-      fill(0);
-      ellipse(this.size / 2, 0, this.size / 4, this.size / 4);
+        // Eye
+        fill(255, 255, 0);
+        ellipse(this.size * 0.2, 0, this.size * 0.5, this.size * 0.5);
+        fill(0);
+        ellipse(this.size * 0.2, 0, this.size * 0.2, this.size * 0.2);
 
     } else if (this.type === 'fast') {
-      noStroke();
+        noStroke();
 
-      fill(this.color, 50);
-      ellipse(-this.size, 0, this.size * 3, this.size);
+        // Motion trail
+        fill(this.color, 30);
+        for(let i = 0; i < 5; i++) {
+            let trailSize = this.size * (1 - i * 0.1);
+            ellipse(-this.size * i * 0.4, 0, trailSize * 2, trailSize * 0.5);
+        }
 
-      fill(this.color);
-      beginShape();
-      vertex(this.size, 0);
-      vertex(-this.size, this.size / 2);
-      vertex(-this.size, -this.size / 2);
-      endShape(CLOSE);
+        // Fins
+        fill(this.color, 150);
+        beginShape();
+        vertex(0, -this.size * 0.5);
+        vertex(-this.size * 1.5, 0);
+        vertex(0, this.size * 0.5);
+        endShape();
 
-      stroke(255, 200);
-      strokeWeight(1);
-      line(-this.size / 2, -this.size / 4, this.size / 2, -this.size / 4);
-      line(-this.size / 2, this.size / 4, this.size / 2, this.size / 4);
+        // Body
+        fill(this.color);
+        beginShape();
+        vertex(this.size, 0);
+        vertex(-this.size * 0.8, this.size * 0.4);
+        vertex(-this.size, 0);
+        vertex(-this.size * 0.8, -this.size * 0.4);
+        endShape(CLOSE);
 
     } else if (this.type === 'tank') {
-      this.pulseTime += 0.03;
-      let pulse = 1 + sin(this.pulseTime) * 0.1;
+        this.pulseTime += 0.03;
+        let pulse = 1 + sin(this.pulseTime) * 0.05;
 
-      noStroke();
-      fill(this.color, 40);
-      ellipse(0, 0, this.size * 2.2 * pulse, this.size * 2.2 * pulse);
+        noStroke();
+        fill(this.color, 40);
+        ellipse(0, 0, this.size * 2.2 * pulse, this.size * 2.2 * pulse);
 
-      fill(this.color);
-      ellipse(0, 0, this.size * 1.8, this.size * 1.8);
+        // Armor plates
+        fill(this.color, 180);
+        rect(-this.size * 0.8, -this.size * 0.8, this.size * 1.6, this.size * 1.6, 4);
+        fill(this.color, 220);
+        rect(-this.size * 0.6, -this.size * 0.6, this.size * 1.2, this.size * 1.2, 4);
 
-      fill(COLORS.background);
-      arc(0, 0, this.size * 1.4, this.size * 1.4, PI / 6, PI - PI / 6, PIE);
-      arc(0, 0, this.size * 1.4, this.size * 1.4, PI + PI / 6, TWO_PI - PI / 6, PIE);
+        // Core
+        fill(255, 100, 0);
+        ellipse(0, 0, this.size * 0.8, this.size * 0.8);
+        fill(255, 200, 0);
+        ellipse(0, 0, this.size * 0.5 * pulse, this.size * 0.5 * pulse);
 
-      fill(255);
-      ellipse(0, 0, this.size * 0.6, this.size * 0.6);
-
-      fill(this.color);
-      ellipse(0, 0, this.size * 0.4 * pulse, this.size * 0.4 * pulse);
     } else if (this.type === 'boss') {
-      this.pulseTime += 0.02;
-      let pulse = 1 + sin(this.pulseTime) * 0.05;
+        this.pulseTime += 0.02;
+        let pulse = 1 + sin(this.pulseTime) * 0.05;
 
-      noStroke();
-      fill(this.color, 30);
-      ellipse(0, 0, this.size * 2.5 * pulse, this.size * 2.5 * pulse);
+        noStroke();
+        fill(this.color, 30);
+        ellipse(0, 0, this.size * 2.5 * pulse, this.size * 2.5 * pulse);
 
-      push();
-      rotate(this.pulseTime * 0.5);
-      fill(this.color, 150);
-      for(let i = 0; i < 4; i++) {
-        rect(-this.size * 0.8, -this.size * 0.1, this.size * 1.6, this.size * 0.2);
-        rotate(HALF_PI);
-      }
-      pop();
+        // Rotating weapon systems
+        push();
+        rotate(this.pulseTime * 0.8);
+        fill(this.color, 200);
+        for(let i = 0; i < 4; i++) {
+            rect(-this.size, -this.size * 0.15, this.size * 2, this.size * 0.3, 5);
+            rotate(HALF_PI);
+        }
+        pop();
 
-      fill(COLORS.background);
-      stroke(this.color);
-      strokeWeight(4);
-      ellipse(0, 0, this.size * 1.2, this.size * 1.2);
+        // Main body
+        fill(COLORS.background);
+        stroke(this.color);
+        strokeWeight(5);
+        ellipse(0, 0, this.size * 1.4, this.size * 1.4);
 
-      fill(this.color);
-      noStroke();
-      ellipse(0, 0, this.size * 0.5, this.size * 0.5);
-      fill(255, 255, 0);
-      ellipse(0, 0, this.size * 0.3 * pulse, this.size * 0.3 * pulse);
+        // Central eye
+        fill(this.color);
+        noStroke();
+        ellipse(0, 0, this.size * 0.7, this.size * 0.7);
+        fill(255, 255, 0);
+        ellipse(0, 0, this.size * 0.4 * pulse, this.size * 0.4 * pulse);
+        fill(0);
+        ellipse(0, 0, this.size * 0.1, this.size * 0.1);
     }
 
     pop();
@@ -2283,18 +2430,36 @@ class Particle {
     this.damaging = options.damaging || false;
     this.damage = options.damage || 0;
     this.pulls = options.pulls || false;
+    this.gravity = options.gravity || 0;
+    this.expands = options.expands || false;
+    this.expansionRate = options.expansionRate || 0;
+    this.initialSize = this.size;
   }
 
   update() {
     this.x += this.vx;
     this.y += this.vy;
+    this.vy += this.gravity;
     this.alpha = this.alpha * (this.lifetime / (this.lifetime + 1));
     this.lifetime--;
+
+    if (this.expands) {
+        this.size += this.expansionRate;
+        this.alpha = 255 * (this.lifetime / 30);
+    }
   }
 
   draw() {
     noStroke();
-    fill(this.color, this.alpha);
+    if(this.expands) {
+        let c = this.color;
+        c.setAlpha(this.alpha);
+        stroke(c);
+        strokeWeight(this.size * 0.1);
+        noFill();
+    } else {
+        fill(this.color, this.alpha);
+    }
     ellipse(this.x, this.y, this.size, this.size);
   }
 
