@@ -767,6 +767,10 @@ function spawnEnemy() {
     enemyDamage = 15;
   }
 
+  if (gameTime > 180 && random() < 0.2) { // After 3 minutes, 20% chance of stalker enemy
+    enemyType = 'stalker';
+  }
+
   // Create the enemy
   enemies.push(new Enemy(spawnX, spawnY, enemyType, level));
 }
@@ -2344,6 +2348,17 @@ class Enemy {
         this.damage = 15;
         this.attackCooldown = RANGED_ENEMY_COOLDOWN;
         break;
+      case 'stalker':
+        this.size = random(18, 28);
+        this.health = 50 + level * 6;
+        this.speed = random(1.5, 2.2);
+        this.color = color(100, 255, 100);
+        this.damage = 12;
+        this.isCloaked = false;
+        this.cloakDuration = 180; // 3 seconds
+        this.cloakCooldown = 300; // 5 seconds
+        this.lastCloak = 0;
+        break;
       case 'boss':
         this.size = 80;
         this.health = 2000 + level * 500;
@@ -2422,6 +2437,16 @@ class Enemy {
             alpha: 100
         }));
     }
+
+    if (this.type === 'stalker') {
+      if (millis() - this.lastCloak > this.cloakCooldown) {
+        this.isCloaked = true;
+        this.lastCloak = millis();
+      }
+      if (this.isCloaked && millis() - this.lastCloak > this.cloakDuration) {
+        this.isCloaked = false;
+      }
+    }
   }
 
   draw() {
@@ -2443,8 +2468,12 @@ class Enemy {
         pop();
     }
 
-    // Different enemy types
-    if (this.type === 'basic') {
+    if (this.type === 'stalker') {
+      let alpha = this.isCloaked ? 50 : 255;
+      fill(this.color, alpha);
+      noStroke();
+      ellipse(0, 0, this.size, this.size);
+    } else if (this.type === 'basic') {
         noStroke();
         this.pulseTime += 0.05;
         let pulse = 1 + sin(this.pulseTime) * 0.1;
