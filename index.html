@@ -75,7 +75,6 @@
     <!-- Load P5.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="run_summary.js"></script>
     
     <!-- Load game script -->
     <script>
@@ -180,6 +179,65 @@ let starfield = [];
 let screenShake = 0;
 let kills = 0;
 let boss = null;
+
+class MusicManager {
+  constructor() {
+    this.tracks = {};
+    this.currentTrack = null;
+    this.fadeTime = 2; // seconds
+  }
+
+  addTrack(name, url) {
+    const audio = new Audio(url);
+    audio.loop = true;
+    this.tracks[name] = audio;
+  }
+
+  playTrack(name) {
+    if (this.currentTrack === this.tracks[name]) {
+      return;
+    }
+
+    if (this.currentTrack) {
+      this.fadeOut(this.currentTrack);
+    }
+
+    this.currentTrack = this.tracks[name];
+    if (this.currentTrack) {
+      this.fadeIn(this.currentTrack);
+    }
+  }
+
+  fadeIn(track) {
+    track.volume = 0;
+    if (audioContext && audioContext.state === 'running') {
+        track.play();
+    }
+  }
+
+  fadeOut(track) {
+    let interval = setInterval(() => {
+      track.volume = Math.max(0, track.volume - 1 / (this.fadeTime * 10));
+      if (track.volume <= 0) {
+        track.pause();
+        clearInterval(interval);
+      }
+    }, 100);
+  }
+
+  update(enemyCount, isBossPresent) {
+    let trackToPlay = 'calm';
+    if (isBossPresent) {
+      trackToPlay = 'boss';
+    } else if (enemyCount > 15) {
+      trackToPlay = 'intense';
+    } else if (enemyCount > 5) {
+      trackToPlay = 'medium';
+    }
+    this.playTrack(trackToPlay);
+  }
+}
+
 let musicManager = new MusicManager();
 
 // Color palette
@@ -203,6 +261,124 @@ const COLORS = {
 
 let audioContext;
 let masterGain;
+
+// Data tracking for the run summary
+let runData = {
+    damageSources: {},
+    upgradeTimeline: [],
+    enemiesKilled: {},
+    totalDamage: 0,
+};
+
+function resetRunData() {
+    runData = {
+        damageSources: {},
+        upgradeTimeline: [],
+        enemiesKilled: {},
+        totalDamage: 0,
+    };
+}
+
+function trackDamage(source, amount) {
+    if (!runData.damageSources[source]) {
+        runData.damageSources[source] = 0;
+    }
+    runData.damageSources[source] += amount;
+    runData.totalDamage += amount;
+}
+
+function trackKill(enemyType) {
+    if (!runData.enemiesKilled[enemyType]) {
+        runData.enemiesKilled[enemyType] = 0;
+    }
+    runData.enemiesKilled[enemyType]++;
+}
+
+function trackUpgrade(upgradeName, gameTime) {
+    runData.upgradeTimeline.push({
+        name: upgradeName,
+        time: formatTime(gameTime),
+    });
+}
+
+function drawRunSummary() {
+    const summaryContainer = document.getElementById('run-summary-container');
+    summaryContainer.style.display = 'block';
+    summaryContainer.innerHTML = `
+        <div class="run-summary-content">
+            <h2>Run Summary</h2>
+            <div class="summary-section">
+                <h3>Damage Sources</h3>
+                <canvas id="damage-chart" width="400" height="200"></canvas>
+            </div>
+            <div class="summary-section">
+                <h3>Upgrade Timeline</h3>
+                <ul id="upgrade-list"></ul>
+            </div>
+            <div class="summary-section">
+                <h3>Enemies Killed</h3>
+                <ul id="enemy-list"></ul>
+            </div>
+            <button onclick="hideRunSummary()">Close</button>
+        </div>
+    `;
+
+    // Populate upgrade timeline
+    const upgradeList = document.getElementById('upgrade-list');
+    runData.upgradeTimeline.forEach(upgrade => {
+        const li = document.createElement('li');
+        li.textContent = `${upgrade.name} at ${upgrade.time}`;
+        upgradeList.appendChild(li);
+    });
+
+    // Populate enemy kill list
+    const enemyList = document.getElementById('enemy-list');
+    for (const enemy in runData.enemiesKilled) {
+        const li = document.createElement('li');
+        li.textContent = `${enemy}: ${runData.enemiesKilled[enemy]}`;
+        enemyList.appendChild(li);
+    }
+
+    // Create damage chart
+    const ctx = document.getElementById('damage-chart').getContext('2d');
+    new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(runData.damageSources),
+            datasets: [{
+                data: Object.values(runData.damageSources),
+                backgroundColor: [
+                    '#FF6384',
+                    '#36A2EB',
+                    '#FFCE56',
+                    '#4BC0C0',
+                    '#9966FF',
+                    '#FF9F40'
+                ],
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                title: {
+                    display: true,
+                    text: 'Damage Sources'
+                }
+            }
+        }
+    });
+}
+
+function hideRunSummary() {
+    const summaryContainer = document.getElementById('run-summary-container');
+    summaryContainer.style.display = 'none';
+    gameState = 'gameover';
+}
+
 
 function playSound(type, options = {}) {
     if (!audioContext) return;
@@ -874,6 +1050,7 @@ function spawnSquad() {
 
 function killEnemy(index) {
   let e = enemies[index];
+  if (!e) return;
   trackKill(e.type);
 
   if (e.type === 'boss') {
@@ -1242,6 +1419,10 @@ function loadProgress() {
 }
 
 function mouseClicked() {
+    if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+
     if (gameState === 'ship_selection') {
         let shipBoxWidth = 200;
         let shipBoxHeight = 250;
@@ -2612,68 +2793,6 @@ class Enemy {
     }
 
     pop();
-  }
-}
-
-class MusicManager {
-  constructor() {
-    this.tracks = {};
-    this.currentTrack = null;
-    this.fadeTime = 2; // seconds
-  }
-
-  addTrack(name, url) {
-    const audio = new Audio(url);
-    audio.loop = true;
-    this.tracks[name] = audio;
-  }
-
-  playTrack(name) {
-    if (this.currentTrack === this.tracks[name]) {
-      return;
-    }
-
-    if (this.currentTrack) {
-      this.fadeOut(this.currentTrack);
-    }
-
-    this.currentTrack = this.tracks[name];
-    if (this.currentTrack) {
-      this.fadeIn(this.currentTrack);
-    }
-  }
-
-  fadeIn(track) {
-    track.volume = 0;
-    track.play();
-    let interval = setInterval(() => {
-      track.volume = Math.min(1, track.volume + 1 / (this.fadeTime * 10));
-      if (track.volume >= 1) {
-        clearInterval(interval);
-      }
-    }, 100);
-  }
-
-  fadeOut(track) {
-    let interval = setInterval(() => {
-      track.volume = Math.max(0, track.volume - 1 / (this.fadeTime * 10));
-      if (track.volume <= 0) {
-        track.pause();
-        clearInterval(interval);
-      }
-    }, 100);
-  }
-
-  update(enemyCount, isBossPresent) {
-    let trackToPlay = 'calm';
-    if (isBossPresent) {
-      trackToPlay = 'boss';
-    } else if (enemyCount > 15) {
-      trackToPlay = 'intense';
-    } else if (enemyCount > 5) {
-      trackToPlay = 'medium';
-    }
-    this.playTrack(trackToPlay);
   }
 }
 

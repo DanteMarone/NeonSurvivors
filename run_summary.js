@@ -15,26 +15,11 @@ function resetRunData() {
     };
 }
 
-function trackDamage(source, amount) {
-    if (!runData.damageSources[source]) {
-        runData.damageSources[source] = 0;
-    }
-    runData.damageSources[source] += amount;
-    runData.totalDamage += amount;
-}
-
 function trackUpgrade(upgradeName, gameTime) {
     runData.upgradeTimeline.push({
         name: upgradeName,
         time: formatTime(gameTime),
     });
-}
-
-function trackKill(enemyType) {
-    if (!runData.enemiesKilled[enemyType]) {
-        runData.enemiesKilled[enemyType] = 0;
-    }
-    runData.enemiesKilled[enemyType]++;
 }
 
 function drawRunSummary() {
