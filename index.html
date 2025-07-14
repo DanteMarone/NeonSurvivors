@@ -176,6 +176,7 @@ let starfield = [];
 let screenShake = 0;
 let kills = 0;
 let boss = null;
+let musicManager = new MusicManager();
 
 // Color palette
 const COLORS = {
@@ -277,6 +278,12 @@ function setup() {
   // Initialize player
   player = new Player(width / 2, height / 2);
 
+  // Setup music
+  musicManager.addTrack('calm', 'https://www.chosic.com/wp-content/uploads/2022/01/The-Enigma.mp3');
+  musicManager.addTrack('medium', 'https://www.chosic.com/wp-content/uploads/2024/03/cinematic-epic-trailer-190181.mp3');
+  musicManager.addTrack('intense', 'https://www.chosic.com/wp-content/uploads/2022/06/A-Vikings-Tale.mp3');
+  musicManager.addTrack('boss', 'https://www.chosic.com/wp-content/uploads/2021/04/And-Now-We-Fight.mp3');
+
   // Start the game
   gameState = 'playing';
 }
@@ -375,6 +382,9 @@ function updateGame() {
   if (experience >= experienceToNextLevel) {
     levelUp();
   }
+
+  // Update music
+  musicManager.update(enemies.length, boss !== null);
 }
 
 function updateDamageNumbers() {
@@ -698,6 +708,7 @@ function spawnBoss() {
 
   boss = new Enemy(spawnX, spawnY, 'boss', level);
   enemies.push(boss);
+  musicManager.playTrack('boss');
 }
 
 function spawnEnemy() {
@@ -859,6 +870,7 @@ function killEnemy(index) {
 
   if (e.type === 'boss') {
     boss = null; // Boss is defeated
+    musicManager.playTrack('intense');
     generateBossUpgradeOptions();
 
     // Massive, multi-layered explosion
@@ -2578,6 +2590,68 @@ class Enemy {
     }
 
     pop();
+  }
+}
+
+class MusicManager {
+  constructor() {
+    this.tracks = {};
+    this.currentTrack = null;
+    this.fadeTime = 2; // seconds
+  }
+
+  addTrack(name, url) {
+    const audio = new Audio(url);
+    audio.loop = true;
+    this.tracks[name] = audio;
+  }
+
+  playTrack(name) {
+    if (this.currentTrack === this.tracks[name]) {
+      return;
+    }
+
+    if (this.currentTrack) {
+      this.fadeOut(this.currentTrack);
+    }
+
+    this.currentTrack = this.tracks[name];
+    if (this.currentTrack) {
+      this.fadeIn(this.currentTrack);
+    }
+  }
+
+  fadeIn(track) {
+    track.volume = 0;
+    track.play();
+    let interval = setInterval(() => {
+      track.volume = Math.min(1, track.volume + 1 / (this.fadeTime * 10));
+      if (track.volume >= 1) {
+        clearInterval(interval);
+      }
+    }, 100);
+  }
+
+  fadeOut(track) {
+    let interval = setInterval(() => {
+      track.volume = Math.max(0, track.volume - 1 / (this.fadeTime * 10));
+      if (track.volume <= 0) {
+        track.pause();
+        clearInterval(interval);
+      }
+    }, 100);
+  }
+
+  update(enemyCount, isBossPresent) {
+    let trackToPlay = 'calm';
+    if (isBossPresent) {
+      trackToPlay = 'boss';
+    } else if (enemyCount > 15) {
+      trackToPlay = 'intense';
+    } else if (enemyCount > 5) {
+      trackToPlay = 'medium';
+    }
+    this.playTrack(trackToPlay);
   }
 }
 
