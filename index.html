@@ -41,10 +41,12 @@
             color: #00ccff;
         }
     </style>
+    <link rel="stylesheet" href="run_summary.css">
     <div id="game-container">
         <h1>NEON SURVIVOR</h1>
         
         <div id="canvas-container"></div>
+        <div id="run-summary-container"></div>
         
         <div class="instructions">
             <h2>How to Play</h2>
@@ -72,6 +74,8 @@
     
     <!-- Load P5.js from CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="run_summary.js"></script>
     
     <!-- Load game script -->
     <script>
@@ -108,7 +112,7 @@ let score = 0;
 let level = 1;
 let experience = 0;
 let experienceToNextLevel = 100;
-let gameState = 'mainmenu'; // 'mainmenu', 'playing', 'upgrade', 'gameover', 'upgrades'
+let gameState = 'mainmenu'; // 'mainmenu', 'playing', 'upgrade', 'gameover', 'upgrades', 'run_summary'
 let upgradeOptions = [];
 let permanentCurrency = 0;
 let globalUpgrades = {};
@@ -310,6 +314,8 @@ function draw() {
     drawGameOverScreen();
   } else if (gameState === 'mainmenu') {
     drawMainMenu();
+  } else if (gameState === 'run_summary') {
+    drawRunSummary();
   } else if (gameState === 'upgrades') {
     drawUpgradeStore();
   } else if (gameState === 'ship_selection') {
@@ -474,6 +480,7 @@ function updateProjectiles() {
       if (distance < p.size + e.size) {
         // Hit enemy
         e.health -= p.damage;
+        trackDamage(p.type, p.damage);
         damageNumbers.push(new DamageNumber(e.x, e.y, p.damage));
         playSound('enemyHit', { frequency: 220, wave: 'square', volume: 0.2, duration: 0.05 });
 
@@ -867,6 +874,7 @@ function spawnSquad() {
 
 function killEnemy(index) {
   let e = enemies[index];
+  trackKill(e.type);
 
   if (e.type === 'boss') {
     boss = null; // Boss is defeated
@@ -1151,6 +1159,7 @@ function selectUpgrade(index) {
     // Apply the upgrade effect
     let selectedUpgrade = upgradeOptions[index];
     selectedUpgrade.effect();
+    trackUpgrade(selectedUpgrade.name, gameTime);
     playSound('upgrade', { frequency: 880, wave: 'sine', volume: 0.4, duration: 0.3 });
 
     // Add the upgrade to the player's list of taken upgrades
@@ -1848,6 +1857,18 @@ function drawGameOverScreen() {
   textSize(18);
   fill(COLORS.uiHighlight);
   text('Press SPACE to restart', width / 2, height * 3 / 4);
+
+  // View Run Summary button
+    let summaryButton = { x: width / 2 - 100, y: height * 3 / 4 + 40, w: 200, h: 50 };
+    fill(COLORS.uiBackground);
+    rect(summaryButton.x, summaryButton.y, summaryButton.w, summaryButton.h, 10);
+    fill(COLORS.text);
+    textSize(18);
+    text('View Run Summary', summaryButton.x + summaryButton.w / 2, summaryButton.y + summaryButton.h / 2);
+
+    if (mouseIsPressed && mouseX > summaryButton.x && mouseX < summaryButton.x + summaryButton.w && mouseY > summaryButton.y && mouseY < summaryButton.y + summaryButton.h) {
+        gameState = 'run_summary';
+    }
 }
 
 function drawUpgradeStore() {
@@ -1903,6 +1924,7 @@ function drawUpgradeStore() {
 }
 
 function resetGame() {
+  resetRunData();
   player = new Player(width / 2, height / 2);
   enemies = [];
   projectiles = [];
