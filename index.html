@@ -113,6 +113,32 @@ let upgradeOptions = [];
 let permanentCurrency = 0;
 let globalUpgrades = {};
 
+const ships = [
+    {
+        name: 'Alpha',
+        unlockCost: 0,
+        weapon: 'laser',
+        trait: 'None',
+        description: 'The standard ship, balanced in all aspects.'
+    },
+    {
+        name: 'Beta',
+        unlockCost: 500,
+        weapon: 'plasma',
+        trait: '+10% speed',
+        description: 'A faster ship with a powerful plasma weapon.'
+    },
+    {
+        name: 'Gamma',
+        unlockCost: 1000,
+        weapon: 'wave',
+        trait: 'Starts with an extra projectile',
+        description: 'A ship with a wide-range wave weapon and extra firepower.'
+    }
+];
+let unlockedShips = ['Alpha'];
+let currentShip = ships[0];
+
 let availableUpgrades = [
   { name: 'Speed', description: 'Increase movement speed', maxLevel: 5, id: 'speed' },
   { name: 'Damage', description: 'Increase projectile damage', maxLevel: 5, id: 'damage' },
@@ -279,6 +305,8 @@ function draw() {
     drawMainMenu();
   } else if (gameState === 'upgrades') {
     drawUpgradeStore();
+  } else if (gameState === 'ship_selection') {
+    drawShipSelection();
   }
 
   // Apply screen shake
@@ -1172,7 +1200,8 @@ function gameOver() {
 function saveProgress() {
   let progress = {
     permanentCurrency: permanentCurrency,
-    globalUpgrades: globalUpgrades
+    globalUpgrades: globalUpgrades,
+    unlockedShips: unlockedShips
   };
   localStorage.setItem('neonSurvivorProgress', JSON.stringify(progress));
 }
@@ -1183,15 +1212,40 @@ function loadProgress() {
     let progress = JSON.parse(savedProgress);
     permanentCurrency = progress.permanentCurrency || 0;
     globalUpgrades = progress.globalUpgrades || {};
+    unlockedShips = progress.unlockedShips || ['Alpha'];
   }
 }
 
 function mouseClicked() {
-  if (gameState === 'mainmenu') {
+    if (gameState === 'ship_selection') {
+        let shipBoxWidth = 200;
+        let shipBoxHeight = 250;
+        let shipSpacing = 50;
+        let totalWidth = ships.length * shipBoxWidth + (ships.length - 1) * shipSpacing;
+        let startX = (width - totalWidth) / 2;
+
+        for (let i = 0; i < ships.length; i++) {
+            let ship = ships[i];
+            let x = startX + i * (shipBoxWidth + shipSpacing);
+            let y = height / 2 - shipBoxHeight / 2;
+
+            if (mouseX >= x && mouseX <= x + shipBoxWidth && mouseY >= y && mouseY <= y + shipBoxHeight) {
+                if (unlockedShips.includes(ship.name)) {
+                    currentShip = ship;
+                    gameState = 'playing';
+                    resetGame();
+                } else if (permanentCurrency >= ship.unlockCost) {
+                    permanentCurrency -= ship.unlockCost;
+                    unlockedShips.push(ship.name);
+                    saveProgress();
+                }
+                break;
+            }
+        }
+    } else if (gameState === 'mainmenu') {
     let playButton = { x: width / 2 - 100, y: height / 2, w: 200, h: 50 };
     if (mouseX > playButton.x && mouseX < playButton.x + playButton.w && mouseY > playButton.y && mouseY < playButton.y + playButton.h) {
-      gameState = 'playing';
-      resetGame();
+        gameState = 'ship_selection';
     }
 
     let upgradesButton = { x: width / 2 - 100, y: height / 2 + 70, w: 200, h: 50 };
@@ -1297,6 +1351,68 @@ function drawMainMenu() {
   fill(COLORS.text);
   textSize(18);
   text(`Crystals: ${permanentCurrency}`, width - 20, 20);
+}
+
+function drawShipSelection() {
+    background(COLORS.background);
+    textAlign(CENTER, CENTER);
+
+    // Title
+    fill(COLORS.uiHighlight);
+    textSize(48);
+    text('Select Your Ship', width / 2, 80);
+
+    // Draw ship options
+    let shipBoxWidth = 200;
+    let shipBoxHeight = 250;
+    let shipSpacing = 50;
+    let totalWidth = ships.length * shipBoxWidth + (ships.length - 1) * shipSpacing;
+    let startX = (width - totalWidth) / 2;
+
+    for (let i = 0; i < ships.length; i++) {
+        let ship = ships[i];
+        let x = startX + i * (shipBoxWidth + shipSpacing);
+        let y = height / 2 - shipBoxHeight / 2;
+        let isUnlocked = unlockedShips.includes(ship.name);
+        let isHovered = mouseX >= x && mouseX <= x + shipBoxWidth && mouseY >= y && mouseY <= y + shipBoxHeight;
+
+        // Draw box
+        fill(COLORS.uiBackground);
+        if (isHovered) {
+            stroke(COLORS.uiHighlight);
+            strokeWeight(3);
+        } else {
+            noStroke();
+        }
+        rect(x, y, shipBoxWidth, shipBoxHeight, 10);
+
+        // Ship name
+        noStroke();
+        fill(isHovered ? COLORS.uiHighlight : COLORS.text);
+        textSize(24);
+        text(ship.name, x + shipBoxWidth / 2, y + 30);
+
+        // Ship description
+        textSize(14);
+        fill(COLORS.text);
+        text(ship.description, x + 20, y + 70, shipBoxWidth - 40, 100);
+
+        // Ship trait
+        textSize(16);
+        fill(COLORS.uiHighlight);
+        text(`Trait: ${ship.trait}`, x + shipBoxWidth / 2, y + 150);
+
+        // Unlock status
+        if (isUnlocked) {
+            fill(0, 255, 0);
+            textSize(18);
+            text('Unlocked', x + shipBoxWidth / 2, y + shipBoxHeight - 30);
+        } else {
+            fill(255, 0, 0);
+            textSize(18);
+            text(`Cost: ${ship.unlockCost}`, x + shipBoxWidth / 2, y + shipBoxHeight - 30);
+        }
+    }
 }
 
 function drawGame() {
@@ -1808,6 +1924,15 @@ class Player {
     this.lastFired = 0;
     this.rerolls = 0;
 
+    // Apply ship trait
+    if (currentShip.trait === '+10% speed') {
+        this.speed *= 1.1;
+    }
+    if (currentShip.trait === 'Starts with an extra projectile') {
+        this.multishot = 2;
+    }
+
+
     // Apply global upgrades
     if (globalUpgrades.bonus_stats) {
       let level = globalUpgrades.bonus_stats;
@@ -1820,11 +1945,13 @@ class Player {
     }
     this.projectileSize = 1;
     this.projectileSpeed = 5;
-    this.multishot = 1;
+    if (currentShip.trait !== 'Starts with an extra projectile') {
+        this.multishot = 1;
+    }
     this.upgradeCount = 0;
     this.invulnerable = 0; // invulnerability timer
     this.angle = 0; // facing angle
-    this.weapon = currentWeapon;
+    this.weapon = currentShip.weapon;
     this.takenUpgrades = [];
     this.synergies = {};
     this.weaponLevels = {
