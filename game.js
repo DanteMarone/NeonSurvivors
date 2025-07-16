@@ -123,6 +123,15 @@ const COLORS = {
 let audioContext;
 let masterGain;
 
+const MUSIC_PATTERNS = {
+  menu: [261.63, 0, 329.63, 0],
+  calm: [261.63, 293.66, 329.63, 0, 349.23, 392.0, 440.0, 0],
+  medium: [392.0, 349.23, 392.0, 440.0, 392.0, 349.23, 392.0, 493.88],
+  intense: [523.25, 466.16, 523.25, 587.33, 523.25, 466.16, 523.25, 659.25],
+  boss: [130.81, 146.83, 130.81, 146.83, 164.81, 174.61, 164.81, 174.61],
+  lowlife: [880, 0, 880, 0, 880, 0, 880, 0]
+};
+
 function playSound(type, options = {}) {
     if (!audioContext) return;
 
@@ -161,6 +170,9 @@ function setup() {
     masterGain = audioContext.createGain();
     masterGain.gain.value = 0.5; // Master volume
     masterGain.connect(audioContext.destination);
+    if (typeof userStartAudio === 'function') {
+      userStartAudio();
+    }
   } catch (e) {
     console.error('Web Audio API is not supported in this browser');
   }
@@ -201,15 +213,18 @@ function setup() {
   // Initialize player
   player = new Player(width / 2, height / 2);
 
-  // Setup music
+  // Setup music with procedural tracks
   musicManager = new MusicManager();
-  musicManager.addTrack('calm', 'https://www.chosic.com/wp-content/uploads/2022/01/The-Enigma.mp3');
-  musicManager.addTrack('medium', 'https://www.chosic.com/wp-content/uploads/2024/03/cinematic-epic-trailer-190181.mp3');
-  musicManager.addTrack('intense', 'https://www.chosic.com/wp-content/uploads/2022/06/A-Vikings-Tale.mp3');
-  musicManager.addTrack('boss', 'https://www.chosic.com/wp-content/uploads/2021/04/And-Now-We-Fight.mp3');
+  musicManager.addProceduralTrack('menu', MUSIC_PATTERNS.menu, 80, 'sine');
+  musicManager.addProceduralTrack('calm', MUSIC_PATTERNS.calm, 90, 'triangle');
+  musicManager.addProceduralTrack('medium', MUSIC_PATTERNS.medium, 110, 'triangle');
+  musicManager.addProceduralTrack('intense', MUSIC_PATTERNS.intense, 140, 'sawtooth');
+  musicManager.addProceduralTrack('boss', MUSIC_PATTERNS.boss, 160, 'square');
+  musicManager.addProceduralTrack('lowlife', MUSIC_PATTERNS.lowlife, 200, 'square');
 
-  // Start the game
-  gameState = 'playing';
+  // Start at the main menu
+  gameState = 'mainmenu';
+  musicManager.playTrack('menu');
 }
 
 function DamageNumber(x, y, amount) {
@@ -310,7 +325,7 @@ function updateGame() {
   }
 
   // Update music
-  musicManager.update(enemies.length, boss !== null);
+  musicManager.update(enemies.length, boss !== null, player.health / player.maxHealth);
 }
 
 function updateDamageNumbers() {
@@ -1186,6 +1201,7 @@ function mouseClicked() {
     let backButton = { x: 20, y: 20, w: 100, h: 40 };
     if (mouseX > backButton.x && mouseX < backButton.x + backButton.w && mouseY > backButton.y && mouseY < backButton.y + backButton.h) {
       gameState = 'mainmenu';
+      musicManager.playTrack('menu');
     }
 
     let upgradeY = 150;
@@ -1225,6 +1241,7 @@ function mouseClicked() {
     // Restart game
     resetGame();
     gameState = 'mainmenu';
+    musicManager.playTrack('menu');
   }
 }
 
@@ -1253,6 +1270,7 @@ function keyPressed() {
 }
 
 function drawMainMenu() {
+  musicManager.playTrack('menu');
   background(COLORS.background);
   textAlign(CENTER, CENTER);
 
@@ -2518,58 +2536,67 @@ class Enemy {
   }
 }
 
+class ProceduralTrack {
+  constructor(pattern, bpm = 120, wave = 'sine') {
+    this.pattern = pattern;
+    this.bpm = bpm;
+    this.osc = new p5.Oscillator(wave);
+    this.env = new p5.Envelope();
+    this.env.setADSR(0.05, 0.1, 0.3, 0.2);
+    this.env.setRange(0.4, 0);
+    this.loop = new p5.SoundLoop((time) => this.playStep(time), 60 / this.bpm);
+    this.step = 0;
+  }
+
+  playStep(time) {
+    let freq = this.pattern[this.step % this.pattern.length];
+    this.step++;
+    if (freq > 0) {
+      this.osc.freq(freq);
+      this.env.play(this.osc, time, 0.2);
+    }
+  }
+
+  start() {
+    if (this.loop.isPlaying) return;
+    this.osc.start();
+    this.loop.start();
+  }
+
+  stop() {
+    if (!this.loop.isPlaying) return;
+    this.loop.stop();
+    this.osc.stop();
+  }
+}
+
 class MusicManager {
   constructor() {
     this.tracks = {};
     this.currentTrack = null;
-    this.fadeTime = 2; // seconds
   }
 
-  addTrack(name, url) {
-    const audio = new Audio(url);
-    audio.loop = true;
-    this.tracks[name] = audio;
+  addProceduralTrack(name, pattern, bpm = 120, wave = 'sine') {
+    this.tracks[name] = new ProceduralTrack(pattern, bpm, wave);
   }
 
   playTrack(name) {
-    if (this.currentTrack === this.tracks[name]) {
-      return;
-    }
-
+    const track = this.tracks[name];
+    if (this.currentTrack === track) return;
     if (this.currentTrack) {
-      this.fadeOut(this.currentTrack);
+      this.currentTrack.stop();
     }
-
-    this.currentTrack = this.tracks[name];
+    this.currentTrack = track;
     if (this.currentTrack) {
-      this.fadeIn(this.currentTrack);
+      this.currentTrack.start();
     }
   }
 
-  fadeIn(track) {
-    track.volume = 0;
-    track.play();
-    let interval = setInterval(() => {
-      track.volume = Math.min(1, track.volume + 1 / (this.fadeTime * 10));
-      if (track.volume >= 1) {
-        clearInterval(interval);
-      }
-    }, 100);
-  }
-
-  fadeOut(track) {
-    let interval = setInterval(() => {
-      track.volume = Math.max(0, track.volume - 1 / (this.fadeTime * 10));
-      if (track.volume <= 0) {
-        track.pause();
-        clearInterval(interval);
-      }
-    }, 100);
-  }
-
-  update(enemyCount, isBossPresent) {
+  update(enemyCount, isBossPresent, healthRatio = 1) {
     let trackToPlay = 'calm';
-    if (isBossPresent) {
+    if (healthRatio <= 0.3) {
+      trackToPlay = 'lowlife';
+    } else if (isBossPresent) {
       trackToPlay = 'boss';
     } else if (enemyCount > 15) {
       trackToPlay = 'intense';
