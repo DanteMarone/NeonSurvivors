@@ -99,7 +99,7 @@ let starfield = [];
 let screenShake = 0;
 let kills = 0;
 let boss = null;
-let musicManager = new MusicManager();
+let musicManager;
 
 // Color palette
 const COLORS = {
@@ -202,6 +202,7 @@ function setup() {
   player = new Player(width / 2, height / 2);
 
   // Setup music
+  musicManager = new MusicManager();
   musicManager.addTrack('calm', 'https://www.chosic.com/wp-content/uploads/2022/01/The-Enigma.mp3');
   musicManager.addTrack('medium', 'https://www.chosic.com/wp-content/uploads/2024/03/cinematic-epic-trailer-190181.mp3');
   musicManager.addTrack('intense', 'https://www.chosic.com/wp-content/uploads/2022/06/A-Vikings-Tale.mp3');
